@@ -1,33 +1,18 @@
-# Template for contribution to Computo
-Jane Doe, John Doe
-2026-07-07
+# 第一阶段：股票横截面选股与量化回测基本功
 
-### Citation
+面向大模型研究者的 Python 可复现量化研究入门指南。
 
-Submitted to Computo.
+[![build and publish](https://github.com/shjdjjfi/quant-cross-sectional-guide/actions/workflows/build.yml/badge.svg)](https://github.com/shjdjjfi/quant-cross-sectional-guide/actions/workflows/build.yml)
 
-### Badges
+## 文件
 
-[![build and
-publish](https://github.com/computorg/template-computo-python/actions/workflows/build.yml/badge.svg)](https://github.com/computorg/template-computo-python/actions/workflows/build.yml)
-[![reviews](https://img.shields.io/badge/review-report-blue)](https://github.com/computorg/template-computo-python/issues?q=is%3Aopen+is%3Aissue+label%3Areview)
-[![SWH](https://archive.softwareheritage.org/badge/origin/https://github.com/computorg/template-computo-python)](https://archive.softwareheritage.org/browse/origin/?origin_url=https://github.com/computorg/template-computo-python)
-[![DOI:10.5072/computo.0000](https://img.shields.io/badge/DOI-10.5072%2Fcomputo.0000-034E79.svg)](https://doi.org/10.5072/computo.0000)
-[![Creative Commons
-License](https://i.creativecommons.org/l/by/4.0/80x15.png)](http://creativecommons.org/licenses/by/4.0/)
+- `main.qmd`：Computo/Quarto 正文。
+- `_quarto.yml`：论文元数据与输出格式。
+- `references.bib`：参考文献。
+- `environment.yml`：GitHub Actions 使用的 Python 环境。
+- `src/phase1_cross_sectional_backtest.py`：完整横截面回测脚本。
+- `.github/workflows/build.yml`：Computo 官方自动编译与发布工作流。
 
-### Authors’ affiliations
+## 在线自动编译
 
-- [Jane Doe](https://janedoe.someplace.themoon.org) (Name of Affiliation one)
-- [John Doe](https://johndoe.someplace.themoon.org) (Name of Affiliation two)
-
-### Abstract
-
-Template for preparing a submission to Computo, using the [quarto
-journal
-extension](https://github.com/computorg/computo-quarto-extension), the
-Jupyter kernel (Python user) and the environment files to set-up the
-dependencies. For a detailed, step-by-step guide on preparing your
-article, setting up the continuous integration and submitting it to
-Computo, please consult the [guidelines for
-authors](https://computo-journal.org/site/guidelines-authors.html).
+将本仓库文件上传到 GitHub 后，进入 **Actions** 查看自动编译；进入 **Settings → Pages**，将 Source 设置为 **GitHub Actions**。

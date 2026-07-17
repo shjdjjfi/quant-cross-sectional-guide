@@ -1,0 +1,43 @@
+/* Keep the article readable on wide screens while preserving Computo styling. */
+main.content,
+#quarto-content main,
+.quarto-container,
+.page-columns {
+  max-width: 80em;
+}
+
+body {
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    "PingFang SC",
+    "Hiragino Sans GB",
+    "Microsoft YaHei",
+    Arial,
+    sans-serif;
+  line-height: 1.75;
+}
+
+pre code {
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+table {
+  font-size: 0.94rem;
+}
+
+.math.display {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+@media (max-width: 90em) {
+  main.content,
+  #quarto-content main,
+  .quarto-container,
+  .page-columns {
+    max-width: calc(100vw - 2rem);
+  }
+}

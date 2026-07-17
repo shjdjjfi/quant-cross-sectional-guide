@@ -1,7 +1,10 @@
-name: template-python
+name: quant-cross-sectional-guide
 channels:
   - conda-forge
 dependencies:
+  - python>=3.10
   - jupyter
+  - ipykernel
   - matplotlib
   - numpy
+  - pandas

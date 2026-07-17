@@ -1,194 +1,928 @@
-# Introduction
+::: {.callout-important}
+## 本阶段的完成标准
 
-## About this document
+这不是一个“看完课程即可”的阶段。完成后，你必须能够独立构造传统因子、
+生成横截面股票排序、形成持仓、扣除交易成本，并解释回测中是否存在未来信息泄露。
 
-This document, accompanied by the [customized GitHub repository](https://github.com/computorg/template-computo-python/), provides a template for writing contributions to **Computo** [@computo].
+建议周期为 **2 周、28--35 小时**。最终交付物是一套无机器学习、无大模型的可复现回测程序。
+:::
+
+---
+
+# 一、第一阶段究竟要解决什么问题
+
+这一阶段先不要学习“让大模型预测股票”，也不要急着使用强化学习、Agent 或复杂神经网络。你必须先能独立回答以下问题：
+
+1. 一行股票数据代表什么？
+2. 收益率、前瞻收益和累计收益分别怎样计算？
+3. 横截面选股和时间序列预测有什么区别？
+4. 因子是怎样从原始行情变成每只股票的可比较分数的？
+5. 为什么必须横截面去极值、标准化或排序？
+6. 信号在什么时候生成，最早什么时候能够交易？
+7. 如何把股票分数转换成持仓权重？
+8. 换手率和交易成本如何侵蚀收益？
+9. RankIC、年化收益、Sharpe、最大回撤分别衡量什么？
+10. 如何避免未来信息泄露、幸存者偏差和随机切分错误？
+
+第一阶段完成后，你应拥有一个最小闭环：
+
+$$
+\text{行情数据}
+\rightarrow
+\text{传统因子}
+\rightarrow
+\text{横截面排序}
+\rightarrow
+\text{持仓权重}
+\rightarrow
+\text{成本后收益}
+\rightarrow
+\text{评价指标}
+$$
+
+---
+
+# 二、两周学习安排
+
+| 天数 | 学习主题 | 预计时间 | 必须完成的产出 |
+|---|---|---:|---|
+| 第 1 天 | 股票数据结构、复权价格、交易日 | 2 小时 | 能解释 `date-ticker-close-volume` 长表 |
+| 第 2 天 | 简单收益率、对数收益率、累计收益 | 2 小时 | 手工计算单只股票收益曲线 |
+| 第 3 天 | 横截面与时间序列的区别 | 2 小时 | 每个交易日对股票进行排序 |
+| 第 4 天 | 动量、反转、波动率、流动性因子 | 3 小时 | 构造至少 4 个传统因子 |
+| 第 5 天 | 去极值、标准化、缺失值 | 2 小时 | 实现按日横截面 z-score |
+| 第 6 天 | 标签、预测区间与信息可得时间 | 3 小时 | 构造未来 1 日和未来 5 日收益 |
+| 第 7 天 | RankIC、分组收益与单调性 | 2 小时 | 输出日度 RankIC 序列 |
+| 第 8 天 | Top-K、Top 分位数组合与权重 | 3 小时 | 将股票分数转为等权组合 |
+| 第 9 天 | 换手率、佣金、滑点 | 2 小时 | 同时报告成本前和成本后收益 |
+| 第 10 天 | 年化收益、波动率、Sharpe、回撤 | 2 小时 | 编写绩效评价函数 |
+| 第 11 天 | 前视偏差、幸存者偏差、复权错误 | 2 小时 | 编写数据审计检查 |
+| 第 12 天 | 时间切分、滚动验证 | 2 小时 | 禁止随机切分，完成时间切分 |
+| 第 13 天 | 完整回测程序 | 3 小时 | 从数据读取到结果输出一次跑通 |
+| 第 14 天 | 结果解释与实验报告 | 2 小时 | 写 2–3 页阶段报告 |
+
+---
+
+# 三、知识点与示例代码
+
+## 1. 股票面板数据的基本结构
+
+横截面选股通常使用“长表”数据。每一行表示某只股票在某个交易日的状态。
+
+```text
+date        ticker   close    volume
+2024-01-02  000001   9.82     53210000
+2024-01-02  000002   10.41    28930000
+2024-01-03  000001   9.95     61420000
+```
+
+最少需要理解以下字段：
+
+- `date`：交易日；
+- `ticker`：股票代码；
+- `close`：复权收盘价；
+- `volume`：成交量；
+- `sector`：行业，可选但非常有用；
+- `is_tradable`：是否停牌、涨跌停或满足交易条件。
+
+### 生成一个可运行的模拟数据集
+
+下面的代码不依赖网络，方便先学习流程。真实研究时再替换成可靠的历史行情数据。
+
+```python
+import numpy as np
+import pandas as pd
+
+def make_demo_panel(n_stocks=80, n_days=420, seed=42):
+    rng = np.random.default_rng(seed)
+    dates = pd.bdate_range("2023-01-02", periods=n_days)
+    tickers = [f"S{i:03d}" for i in range(n_stocks)]
+
+    # 所有股票共享一部分市场波动。
+    market_ret = rng.normal(0.0002, 0.009, size=n_days)
+    rows = []
+
+    for ticker in tickers:
+        beta = rng.uniform(0.7, 1.3)
+        idiosyncratic_ret = rng.normal(
+            0, rng.uniform(0.008, 0.018), size=n_days
+        )
+        stock_ret = beta * market_ret + idiosyncratic_ret
+
+        close = 50 * np.exp(np.cumsum(stock_ret))
+        volume = rng.lognormal(mean=14.0, sigma=0.45, size=n_days)
+
+        rows.append(pd.DataFrame({
+            "date": dates,
+            "ticker": ticker,
+            "close": close,
+            "volume": volume,
+        }))
+
+    panel = pd.concat(rows, ignore_index=True)
+    return panel.sort_values(["ticker", "date"]).reset_index(drop=True)
+
+panel = make_demo_panel()
+print(panel.head())
+```
+
+### 必须掌握的数据检查
+
+```python
+assert panel["date"].notna().all()
+assert panel["ticker"].notna().all()
+assert (panel["close"] > 0).all()
+assert not panel.duplicated(["date", "ticker"]).any()
+
+# 检查每只股票内部是否按日期递增。
+is_sorted = (
+    panel.groupby("ticker")["date"]
+    .apply(lambda s: s.is_monotonic_increasing)
+    .all()
+)
+assert is_sorted
+```
+
+真实研究中，不应只使用当前仍然上市的股票反推历史股票池，否则会产生幸存者偏差。
+
+---
+
+## 2. 收益率：所有回测的基础
+
+### 2.1 简单收益率
+
+股票从 $P_t$ 变为 $P_{t+1}$ 时：
+
+$$
+r_{t+1}=\frac{P_{t+1}}{P_t}-1
+$$
+
+```python
+panel["ret_1d"] = (
+    panel.groupby("ticker")["close"].pct_change()
+)
+```
+
+### 2.2 对数收益率
+
+$$
+\ell_{t+1}=\log P_{t+1}-\log P_t
+$$
+
+```python
+panel["log_ret_1d"] = (
+    panel.groupby("ticker")["close"]
+    .transform(lambda s: np.log(s).diff())
+)
+```
+
+简单收益率适合计算实际组合收益；对数收益率在统计建模中较方便。
+
+### 2.3 累计收益
+
+```python
+one_stock = panel[panel["ticker"] == "S000"].copy()
+one_stock["wealth"] = (1 + one_stock["ret_1d"].fillna(0)).cumprod()
+one_stock["cum_return"] = one_stock["wealth"] - 1
+```
+
+注意：多期简单收益不能直接相加，而应连乘。
+
+---
+
+## 3. 横截面选股和时间序列预测的区别
+
+### 时间序列问题
+
+比较同一只股票在不同时间的状态：
+
+> 某只股票今天相对过去是否变强？
+
+### 横截面问题
+
+在同一个交易日比较不同股票：
+
+> 今天哪些股票的相对得分最高？
+
+横截面研究中的数据单位是：
+
+$$
+(i,t)
+$$
+
+其中 $i$ 表示股票，$t$ 表示交易日。模型最终应在每个日期上输出股票排序。
+
+```python
+example = pd.DataFrame({
+    "date": ["2024-01-02"] * 4,
+    "ticker": ["A", "B", "C", "D"],
+    "factor": [0.4, -0.2, 1.3, 0.1],
+})
+
+example["rank"] = example.groupby("date")["factor"].rank(
+    ascending=False,
+    method="first"
+)
+print(example.sort_values("rank"))
+```
+
+横截面模型关心的通常不是收益数值预测是否绝对准确，而是排序是否正确。
+
+---
+
+## 4. 第一批必须学习的传统因子
+
+第一阶段只学习四类简单因子。动量效应是经典横截面收益异象之一 [@jegadeesh1993]；但这里的重点不是预设动量一定有效，而是学习如何在严格样本外条件下验证因子。
+
+### 4.1 中期动量
+
+过去 20 个交易日涨幅：
+
+$$
+\text{Mom}_{i,t}^{20}
+=
+\frac{P_{i,t}}{P_{i,t-20}}-1
+$$
+
+```python
+panel["mom_20"] = (
+    panel.groupby("ticker")["close"].pct_change(20)
+)
+```
+
+### 4.2 短期反转
+
+过去 5 日涨幅取负：
+
+$$
+\text{Rev}_{i,t}^{5}
+=
+-\left(\frac{P_{i,t}}{P_{i,t-5}}-1\right)
+$$
+
+```python
+panel["reversal_5"] = -(
+    panel.groupby("ticker")["close"].pct_change(5)
+)
+```
+
+### 4.3 历史波动率
+
+$$
+\text{Vol}_{i,t}^{20}
+=
+\operatorname{Std}
+(r_{i,t-19},\ldots,r_{i,t})
+$$
+
+```python
+panel["ret_1d"] = panel.groupby("ticker")["close"].pct_change()
+
+panel["vol_20"] = (
+    panel.groupby("ticker")["ret_1d"]
+    .transform(lambda s: s.rolling(20, min_periods=20).std())
+)
+```
+
+### 4.4 流动性代理变量
+
+第一阶段可使用成交额对数作为简化流动性指标：
+
+$$
+\text{Liquidity}_{i,t}
+=
+\log(1+P_{i,t}V_{i,t})
+$$
+
+```python
+panel["liquidity"] = np.log1p(
+    panel["close"] * panel["volume"]
+)
+```
+
+注意：这些因子的经济方向不是永恒不变的。第一阶段的目标是学习正确构造和验证，而不是假设某个因子必然盈利。
+
+---
+
+## 5. 横截面去极值与标准化
+
+不同因子的数量级不同，不能直接相加。例如，动量可能是 0.1，成交额对数可能是 20。应先在每个交易日的横截面内处理。
+
+### 5.1 分位数去极值
+
+```python
+def cs_winsorize(s, lower=0.01, upper=0.99):
+    if s.notna().sum() < 5:
+        return s
+    low, high = s.quantile([lower, upper])
+    return s.clip(low, high)
+
+panel["mom_20_w"] = (
+    panel.groupby("date")["mom_20"]
+    .transform(cs_winsorize)
+)
+```
+
+### 5.2 横截面 z-score
+
+$$
+z_{i,t}
+=
+\frac{x_{i,t}-\mu_t}{\sigma_t}
+$$
+
+```python
+def cs_zscore(s):
+    std = s.std(ddof=0)
+    if pd.isna(std) or std < 1e-12:
+        return pd.Series(np.nan, index=s.index)
+    return (s - s.mean()) / std
+
+panel["mom_20_z"] = (
+    panel.groupby("date")["mom_20_w"]
+    .transform(cs_zscore)
+)
+```
+
+关键点：必须按 `date` 分组，而不是在全部年份上统一标准化。后者会将未来时期的统计信息带入过去。
+
+### 5.3 批量处理多个因子
+
+```python
+raw_features = [
+    "mom_20",
+    "reversal_5",
+    "vol_20",
+    "liquidity",
+]
+
+for col in raw_features:
+    panel[f"{col}_w"] = (
+        panel.groupby("date")[col]
+        .transform(cs_winsorize)
+    )
+    panel[f"{col}_z"] = (
+        panel.groupby("date")[f"{col}_w"]
+        .transform(cs_zscore)
+    )
+```
+
+---
+
+## 6. 标签、前瞻收益与未来信息泄露
+
+若研究目标是预测未来 5 个交易日收益，标签应定义为：
+
+$$
+y_{i,t}^{(5)}
+=
+\frac{P_{i,t+5}}{P_{i,t}}-1
+$$
+
+```python
+panel["target_5d"] = (
+    panel.groupby("ticker")["close"].shift(-5)
+    / panel["close"]
+    - 1
+)
+```
+
+未来 1 日收益：
+
+```python
+panel["ret_fwd_1d"] = (
+    panel.groupby("ticker")["close"].shift(-1)
+    / panel["close"]
+    - 1
+)
+```
+
+### 最重要的纪律
+
+`target_5d` 和 `ret_fwd_1d` 只能用于评价，不能进入特征。
+
+错误示例：
+
+```python
+# 错误：把未来收益放进特征。
+features = ["mom_20", "vol_20", "target_5d"]
+```
+
+正确示例：
+
+```python
+features = [
+    "mom_20_z",
+    "reversal_5_z",
+    "vol_20_z",
+    "liquidity_z",
+]
+
+target = "target_5d"
+
+assert target not in features
+```
+
+### 信号必须滞后
+
+若因子使用了当日收盘价，它只能在收盘后完整得到。使用纯收盘数据回测时，最简单的保守处理是让信号至少滞后一天。
+
+```python
+panel["factor_score"] = (
+    0.50 * panel["mom_20_z"]
+    + 0.25 * panel["reversal_5_z"]
+    - 0.20 * panel["vol_20_z"]
+    + 0.05 * panel["liquidity_z"]
+)
+
+panel["signal_lag1"] = (
+    panel.groupby("ticker")["factor_score"].shift(1)
+)
+```
+
+组合在日期 $t$ 使用的是日期 $t-1$ 已经生成的信号，因此不会使用日期 $t$ 尚不可得的信息。
+
+---
+
+## 7. RankIC：先检验排序能力，再做组合
+
+横截面因子最常用的基本评价之一是 RankIC：
+
+$$
+\operatorname{RankIC}_t
+=
+\operatorname{Corr}_{\text{Spearman}}
+(s_{i,t},y_{i,t+1})
+$$
+
+其中 $s_{i,t}$ 是因子分数，$y_{i,t+1}$ 是未来收益。
+
+```python
+def one_day_rank_ic(x):
+    x = x[["factor_score", "target_5d"]].dropna()
+
+    if len(x) < 10:
+        return np.nan
+
+    # 对两列分别转为秩，再计算 Pearson 相关，
+    # 等价于 Spearman 相关的基本实现。
+    ranked = x.rank()
+    return ranked.corr().iloc[0, 1]
+
+rank_ic = (
+    panel.groupby("date")[["factor_score", "target_5d"]]
+    .apply(one_day_rank_ic)
+    .dropna()
+)
+
+print("平均 RankIC:", rank_ic.mean())
+print("RankIC 标准差:", rank_ic.std())
+print("简化 ICIR:", rank_ic.mean() / rank_ic.std())
+```
+
+不要只报告整体相关系数。应先得到一个按日期排列的 RankIC 时间序列，再研究其均值、稳定性和不同市场阶段表现。进入后续严格统计阶段后，可以使用 Newey--West/HAC 标准误处理时间相关性 [@neweywest1987]。
+
+---
+
+## 8. 从分数到 Top 分位数组合
+
+第一阶段使用最简单的规则：
+
+1. 每天按滞后一日信号排序；
+2. 选择得分最高的 20% 股票；
+3. 入选股票等权；
+4. 未入选股票权重为 0。
+
+```python
+bt = panel.dropna(
+    subset=["signal_lag1", "ret_fwd_1d"]
+).copy()
+
+bt["rank_pct"] = (
+    bt.groupby("date")["signal_lag1"]
+    .rank(pct=True, method="first")
+)
+
+bt["selected"] = bt["rank_pct"] >= 0.80
+
+n_selected = (
+    bt.groupby("date")["selected"]
+    .transform("sum")
+)
+
+bt["weight"] = np.where(
+    bt["selected"],
+    1.0 / n_selected,
+    0.0,
+)
+
+bt["weighted_return"] = (
+    bt["weight"] * bt["ret_fwd_1d"]
+)
+
+gross_return = (
+    bt.groupby("date")["weighted_return"]
+    .sum()
+    .rename("gross_return")
+)
+```
+
+这里的 `0.80` 表示选取横截面得分处于前 20% 的股票。
+
+### 等权市场基准
+
+```python
+benchmark_return = (
+    bt.groupby("date")["ret_fwd_1d"]
+    .mean()
+    .rename("benchmark_return")
+)
+```
+
+不要只看策略自身收益，还要与一个明确基准比较。
+
+---
+
+## 9. 换手率与交易成本
+
+若第 $t$ 日权重为 $w_{i,t}$，简化单边换手率可写为：
+
+$$
+\text{Turnover}_t
+=
+\frac{1}{2}
+\sum_i
+|w_{i,t}-w_{i,t-1}|
+$$
+
+```python
+weight_matrix = (
+    bt.pivot(
+        index="date",
+        columns="ticker",
+        values="weight",
+    )
+    .fillna(0.0)
+    .sort_index()
+)
+
+turnover = (
+    weight_matrix.diff().abs().sum(axis=1) / 2
+).rename("turnover")
+```
+
+假设每 1 元换手产生 10 个基点成本：
+
+```python
+cost_rate = 0.001
+
+result = pd.concat(
+    [gross_return, benchmark_return, turnover],
+    axis=1,
+).dropna()
+
+result["cost"] = result["turnover"] * cost_rate
+result["net_return"] = (
+    result["gross_return"] - result["cost"]
+)
+
+result["excess_net_return"] = (
+    result["net_return"]
+    - result["benchmark_return"]
+)
+```
+
+必须同时报告：
+
+- 成本前收益；
+- 成本后收益；
+- 平均换手率；
+- 不同成本假设下的敏感性。
+
+### 成本敏感性测试
+
+```python
+for cost_rate in [0.0005, 0.0010, 0.0020, 0.0030]:
+    net = result["gross_return"] - result["turnover"] * cost_rate
+    print(
+        f"成本率={cost_rate:.4f}, "
+        f"日均净收益={net.mean():.6f}"
+    )
+```
+
+---
+
+## 10. 绩效指标
+
+### 10.1 年化收益
+
+$$
+R_{\text{ann}}
+=
+\left(\prod_{t=1}^{T}(1+r_t)\right)^{252/T}-1
+$$
+
+### 10.2 年化波动率
+
+$$
+\sigma_{\text{ann}}
+=
+\operatorname{Std}(r_t)\sqrt{252}
+$$
+
+### 10.3 Sharpe 比率
+
+在暂不考虑无风险利率的简化情况下：
+
+$$
+\operatorname{Sharpe}
+=
+\frac{\bar r}{\operatorname{Std}(r)}
+\sqrt{252}
+$$
+
+### 10.4 最大回撤
+
+$$
+\operatorname{MDD}
+=
+\min_t
+\left(
+\frac{W_t}{\max_{\tau\le t}W_\tau}-1
+\right)
+$$
+
+```python
+def performance_metrics(returns, periods_per_year=252):
+    r = pd.Series(returns).dropna()
+
+    if len(r) == 0:
+        raise ValueError("收益序列为空。")
+
+    wealth = (1 + r).cumprod()
+    drawdown = wealth / wealth.cummax() - 1
+
+    annual_return = (
+        wealth.iloc[-1] ** (periods_per_year / len(r)) - 1
+    )
+    annual_volatility = (
+        r.std(ddof=1) * np.sqrt(periods_per_year)
+    )
+
+    if r.std(ddof=1) > 1e-12:
+        sharpe = (
+            r.mean() / r.std(ddof=1)
+            * np.sqrt(periods_per_year)
+        )
+    else:
+        sharpe = np.nan
+
+    return {
+        "样本天数": len(r),
+        "年化收益": annual_return,
+        "年化波动率": annual_volatility,
+        "夏普比率": sharpe,
+        "最大回撤": drawdown.min(),
+    }
+
+metrics = performance_metrics(result["net_return"])
+print(metrics)
+```
+
+不要只选择最好看的一个指标。高收益可能伴随极高回撤和换手，高 Sharpe 也可能来自短样本或过度调参。
+
+---
+
+## 11. 时间切分：绝对禁止随机划分
+
+股票数据具有明确时间顺序。不能像普通图像分类一样随机打乱训练集和测试集。
+
+错误示例：
+
+```python
+# 错误：随机划分会让未来样本进入训练集。
+from sklearn.model_selection import train_test_split
+
+train, test = train_test_split(panel, test_size=0.2)
+```
+
+正确的时间划分：
+
+```python
+all_dates = np.array(sorted(panel["date"].unique()))
+n_dates = len(all_dates)
+
+train_end = all_dates[int(n_dates * 0.60)]
+valid_end = all_dates[int(n_dates * 0.80)]
+
+train = panel[panel["date"] < train_end]
+valid = panel[
+    (panel["date"] >= train_end)
+    & (panel["date"] < valid_end)
+]
+test = panel[panel["date"] >= valid_end]
+
+print(
+    train["date"].min(), train["date"].max(),
+    valid["date"].min(), valid["date"].max(),
+    test["date"].min(), test["date"].max(),
+)
+```
+
+第一阶段即使不训练模型，也应养成按时间组织实验的习惯。后续使用 LightGBM、神经网络或 LLM 因子时，这一纪律保持不变。
+
+---
+
+## 12. 必须理解的五类回测陷阱
+
+### 12.1 前视偏差
+
+使用了在交易时点尚未公开的信息，例如：
+
+- 使用当天收盘后生成的因子，却假设按当天收盘价成交；
+- 财报发布日期使用报告期末日期，而不是实际披露日期；
+- 对全样本统一标准化；
+- 使用未来五日收益参与特征筛选。
+
+### 12.2 幸存者偏差
+
+仅使用今天仍然上市的股票进行历史回测，自动排除了历史上退市、失败或表现差的股票。
+
+### 12.3 复权错误
+
+分红、送股、拆股会使原始价格出现机械跳变。因子和收益计算需要使用逻辑一致的复权价格。
+
+### 12.4 数据窥探与多重尝试
+
+测试了大量因子窗口、组合参数和样本时期，最后只报告最好的一组，会高估真实有效性。这属于典型的数据窥探问题 [@lo1990]；模型数量继续增加时还应考虑 Reality Check [@white2000]。
+
+### 12.5 忽略交易约束
+
+停牌、涨跌停、成交不足、最小交易单位和冲击成本都可能使理论持仓无法执行。
+
+---
+
+## 13. 建议的数据审计函数
+
+```python
+def audit_panel(df):
+    required = {
+        "date", "ticker", "close", "volume"
+    }
+    missing = required - set(df.columns)
+
+    if missing:
+        raise ValueError(f"缺少字段：{missing}")
+
+    if df.duplicated(["date", "ticker"]).any():
+        raise ValueError("存在 date-ticker 重复记录。")
+
+    if (df["close"] <= 0).any():
+        raise ValueError("存在非正价格。")
+
+    if df[["date", "ticker", "close"]].isna().any().any():
+        raise ValueError("关键字段存在缺失值。")
+
+    sorted_check = (
+        df.sort_values(["ticker", "date"])
+        .groupby("ticker")["date"]
+        .apply(lambda s: s.is_monotonic_increasing)
+        .all()
+    )
+
+    if not sorted_check:
+        raise ValueError("股票内部日期顺序异常。")
+
+    return {
+        "行数": len(df),
+        "股票数": df["ticker"].nunique(),
+        "交易日数": df["date"].nunique(),
+        "起始日期": df["date"].min(),
+        "结束日期": df["date"].max(),
+    }
+
+print(audit_panel(panel))
+```
+
+---
+
+# 四、第一阶段最终作业
+
+## 作业题目
+
+**基于动量、短期反转、波动率和流动性的横截面 Top-20% 选股回测**
+
+## 强制设定
+
+- 仅使用日频价格与成交量；
+- 不使用机器学习；
+- 不使用 LLM；
+- 因子均按交易日横截面处理；
+- 信号至少滞后 1 日；
+- 选择得分最高的 20% 股票；
+- 入选股票等权；
+- 显式计算换手和交易成本；
+- 同时报告市场等权基准；
+- 不允许随机切分。
+
+## 必须输出
+
+1. 数据审计摘要；
+2. 四个因子的缺失率和分布；
+3. 日度 RankIC 序列及其均值；
+4. 策略成本前收益；
+5. 策略成本后收益；
+6. 基准收益；
+7. 年化收益；
+8. 年化波动率；
+9. Sharpe 比率；
+10. 最大回撤；
+11. 平均换手率；
+12. 至少四档交易成本敏感性；
+13. 累计净值图；
+14. 对结果失败原因的解释。
+
+---
+
+# 五、建议的项目目录
+
+```text
+phase1_quant_basics/
+├── data/
+│   └── prices.csv
+├── src/
+│   └── phase1_cross_sectional_backtest.py
+├── outputs/
+│   ├── daily_backtest.csv
+│   ├── rank_ic.csv
+│   ├── metrics.json
+│   └── net_value.png
+├── requirements.txt
+└── README.md
+```
+
+建议的 `requirements.txt`：
+
+```text
+numpy
+pandas
+matplotlib
+```
+
+安装：
+
+```bash
+python -m venv .venv
+# Windows:
+.venv\Scripts\activate
+# macOS/Linux:
+# source .venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+运行：
+
+```bash
+python src/phase1_cross_sectional_backtest.py
+```
+
+---
+
+# 六、阶段验收标准
+
+你满足以下条件后，才进入第二阶段 Qlib：
+
+- 能清楚解释特征日、信号日、持仓日和收益实现日；
+- 能解释为什么 `shift(-5)` 只能构造标签；
+- 能解释为什么特征要按日期做横截面标准化；
+- 能从股票得分构造等权 Top 分位数组合；
+- 能计算换手率和成本后收益；
+- 能同时报告 RankIC 和组合绩效；
+- 能说明随机划分为什么错误；
+- 能指出幸存者偏差、前视偏差和复权错误；
+- 完整脚本可以从零运行并生成结果文件；
+- 即使策略没有盈利，也能客观解释失败原因，而不是继续盲目调参。
+
+第一阶段的核心成果不是得到一个高收益策略，而是建立一条不会轻易自欺的研究流水线。
+
+
+# 下一阶段：进入 Qlib 前的检查点
+
+只有在以下问题都可以独立回答后，才建议进入 Qlib：
+
+1. 为什么使用当日收盘价构造的信号不能假设在同一收盘价成交？
+2. 为什么 `shift(-5)` 生成的是标签而不是可用特征？
+3. 为什么横截面标准化必须在每个交易日内完成？
+4. 因子 RankIC 为正，为什么组合成本后收益仍可能为负？
+5. 为什么不能对股票面板数据做随机训练测试划分？
+6. 为什么只使用当前存续股票会产生幸存者偏差？
 
 ::: {.callout-tip}
-## Note
-This document provides only the key formatting principles. For a detailed, step-by-step guide on preparing your article and submitting it to Computo, please consult the [guidelines for authors](https://computo-journal.org/site/guidelines-authors.html).
-:::
+## 推荐推进方式
 
-## Quarto
-
-[Quarto](https://quarto.org/) is a versatile formatting system for authoring documents integrating markdown, LaTeX and code blocks interpreted either via Jupyter or Knitr (thus supporting Python, R and Julia). It relies on the [Pandoc](https://pandoc.org/MANUAL.html) document converter.
-
-## Requirements
-
-You need [quarto](https://quarto.org/) installed on your system and the [Computo extension](https://github.com/computorg/computo-quarto-extension) to prepare your document. For the latter, once quarto is installed, run the following to install the extension in the current directory (it creates a `_extension` directory which is ignored by git thanks to `.gitignore` by default):
-
-```.bash
-quarto add computorg/computo-quarto-extension
-```
-
-[`Python`](https://www.python.org/) and [`Jupyter`](https://jupyter.org/install) must be installed on your computer.
-
-# Formatting
-
-This section covers basic formatting guidelines for quarto documents.
-
-To render a document, run `quarto render`. By default, both PDF and HTML documents are generated:
-
-```.bash
-quarto render # renders both HTML and PDF
-```
-
-::: {.callout-tip}
-## Note
-
-To check the syntax of the formatting below, you can use the `</> source` button at the top right of this document.
-:::
-
-## Basic markdown formatting
-
-**Bold text** or _italic_
-
-- This is a list
-- With more elements
-- It isn't numbered.
-
-But we can also do a numbered list
-
-1. This is my first item
-2. This is my second item
-3. This is my third item
-
-## Mathematics
-
-### Mathematical formulae
-
-[LaTeX](https://www.latex-project.org/) code is natively supported[^lualatex], which makes it possible to use mathematical formulae:
-
-[^lualatex]: We use [lualatex](https://lualatex.org/) for this purpose.
-
-$$
-f(x_1, \dots, x_n; \mu, \sigma^2) =
-\frac{1}{\sigma \sqrt{2\pi}} \exp{\left(- \frac{1}{2\sigma^2}\sum_{i=1}^n(x_i - \mu)^2\right)}
-$$
-
-It is also possible to cross-reference an equation, see @eq-mylabel:
-
-$$
-\begin{aligned}
-D_{x_N} & = \frac12
-\left[\begin{array}{cc}
-x_L^\top & x_N^\top \end{array}\right] \,
-\left[\begin{array}{cc}  L_L & B \\ B^\top & L_N \end{array}\right] \,
-\left[\begin{array}{c}
-x_L \\ x_N \end{array}\right] \\
-& = \frac12 (x_L^\top L_L x_L + 2 x_N^\top B^\top x_L + x_N^\top L_N x_N),
-\end{aligned}
-$$ {#eq-mylabel}
-
-### Theorems and other amsthem-like environments
-
-Quarto includes a nice support for theorems, with predefined prefix labels for theorems, lemmas, proposition, etc. see [this page](https://quarto.org/docs/authoring/cross-references.html#theorems-and-proofs). Here is a simple example:
-
-::: {#thm-slln}
-## Strong law of large numbers
-
-The sample average converges almost surely to the expected value:
-
-$$\overline{X}_n\ \xrightarrow{\text{a.s.}}\ \mu \qquad\textrm{when}\ n \to \infty.$$
-:::
-
-See @thm-slln.
-
-## Python Code
-
-Quarto uses either Jupyter or knitr to render code chunks. This can be triggered in the yaml header. In this tutorial, we use `Jupyter` (`Python` and `Jupyter` must be installed on your computer).
-
-``` yaml
----
-title: "My Document"
-author: "Jane Doe"
-jupyter: python3
----
-```
-
-`python` code chunks may be embedded as follows:
-
-```{python python-code}
-import numpy as np
-x = np.random.normal(0, 1, 10)
-x
-```
-
-## Figures
-
-Plots can be generated as follows:
-
-```{python stem-plot}
-#| label: fig-stem-plot
-#| fig-cap: "A basic Stem plot"
-
-import matplotlib.pyplot as plt
-import numpy as np
-
-x = np.linspace(0.1, 2 * np.pi, 41)
-y = np.exp(np.sin(x))
-
-plt.stem(x, y)
-plt.show()
-```
-
-It is also possible to create figures from static images:
-
-:::{#fig-logo}
-
-![](https://raw.githubusercontent.com/computorg/comm/main/design/logo_text_vertical.png){height=200}
-
-Computo logo (label)
-:::
-
-
-## Tables
-
-Tables (with label: `@tbl-mylabel` renders @tbl-mylabel) can be generated with markdown as follows
-
-| Tables   |      Are      |  Cool |
-|----------|:-------------:|------:|
-| col 1 is |  left-aligned | $1600 |
-| col 2 is |    centered   |   $12 |
-| col 3 is | right-aligned |    $1 |
-: my table caption {#tbl-mylabel}
-
-## Handling references {#sec-references}
-
-### Bibliographic references
-
-References are displayed as footnotes using
-[BibTeX](http://www.bibtex.org/), e.g. `[@computo]` will be displayed
-as [@computo], where `computo` is the bibtex key for this specific
-entry. The bibliographic information is automatically retrieved from
-the `.bib` file specified in the header of this document (here:
-`references.bib`).
-
-### Other cross-references
-
-As already (partially) seen, Quarto includes a mechanism similar to the
-bibliographic references for sections, equations, theorems, figures,
-lists, etc. Have a look at [this
-page](https://quarto.org/docs/authoring/cross-references.html).
-
-## Advanced formatting
-
-Advanced formatting features are possible and documented (including interactive plots, pseudo-code, (Tikz) diagrams, Lua filters, mixing R + Python in the same document), but are beyond the scope of this simple introduction. We point to several entries in this direction.
-
-::: {.callout-warning}
-## More information
-
-- [The Quarto web site](https://quarto.org) for comprehensive documentation, including:
-  + [Tutorial](https://quarto.org/docs/get-started/)
-  + [User guide](https://quarto.org/docs/guide/)
-  + [Options reference](https://quarto.org/docs/reference/)
-
-- [The template distributed with the Computo Quarto extension](https://computo.sfds.asso.fr/computo-quarto-extension/), which uses such advanced features.
-
-- [Our mock version of the t-SNE paper](https://computo.sfds.asso.fr/published-paper-tsne/), a full and advanced example using Python and the Jupyter kernel.
-
-- [The previously published papers in Computo](https://computo.sfds.asso.fr/publications/) can be used as references.
-
+先使用本文的模拟数据完整跑通一次，再替换为真实历史行情。
+真实数据接入后不要立即调参，先检查复权、股票池历史成分、停牌记录和可交易时间。
 :::
 
 # References {.unnumbered}

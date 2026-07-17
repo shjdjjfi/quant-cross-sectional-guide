@@ -3,6 +3,8 @@ format: gfm-commonmark
 default-image-extension: ""
 ---
 
+# 第一阶段：股票横截面选股与量化回测基本功
+
 ### Citation
 
 {{< cite-as >}}
@@ -15,10 +17,17 @@ default-image-extension: ""
 [![DOI:{{< meta citation.doi >}}](https://img.shields.io/badge/DOI-{{< shields-encode citation.doi >}}-034E79.svg)](https://doi.org/{{< meta citation.doi >}})
 [![Creative Commons License](https://i.creativecommons.org/l/by/4.0/80x15.png)](http://creativecommons.org/licenses/by/4.0/)
 
-### Authors' affiliations
+### Author
 
 {{< author-list >}}
 
 ### Abstract
 
 {{< meta abstract >}}
+
+### Main files
+
+- `main.qmd`: article source.
+- `references.bib`: bibliography.
+- `src/phase1_cross_sectional_backtest.py`: complete runnable Python example.
+- `.github/workflows/build.yml`: official Computo build and publishing workflow.

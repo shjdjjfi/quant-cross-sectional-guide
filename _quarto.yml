@@ -4,44 +4,38 @@ project:
     - main.qmd
     - README.qmd
 
-title: "Template for contribution to Computo"
-subtitle: "Example dedicated to `Python` users"
+title: "第一阶段：股票横截面选股与量化回测基本功"
+subtitle: "面向大模型研究者的 Python 可复现入门指南"
 author:
-  - name: Jane Doe
+  - name: Zichen Song
     corresponding: true
-    email: janedoe@nowhere.moon
-    url: https://janedoe.someplace.themoon.org
-    orcid: 0000-0000-0000-0000
-    affiliations:
-      - name: Name of Affiliation one
-        department: Statistics
-        url: https://someplace.themoon.org
-  - name: John Doe
-    email: johndoe@nowhere.moon
-    url: https://johndoe.someplace.themoon.org
-    orcid: 0000-0000-0000-0000
-    affiliations:
-      - name: Name of Affiliation two
-        department: Computer Science
-        url: https://someplace.themoon.org
+    orcid: 0000-0003-4155-2410
 date: last-modified
 date-modified: last-modified
 abstract: >+
-  Template for preparing a submission to Computo, using the [quarto journal extension](https://github.com/computorg/computo-quarto-extension), the Jupyter kernel (Python user) and the environment files to set-up the dependencies.
-
-  For a detailed, step-by-step guide on preparing your article, setting up the continuous integration and submitting it to Computo, please consult the [guidelines for authors](https://computo-journal.org/site/guidelines-authors.html).
-keywords: [key1, key2, key3]
+  本文面向已经具备 Python、机器学习或大模型研究经验，但尚未系统学习金融量化研究的读者。
+  目标是在进入 Qlib、金融文本因子和大模型弱标注之前，先建立一个无机器学习、无大模型、
+  无未来信息泄露的股票横截面选股与回测闭环。正文依次讲解股票面板数据、收益率、传统因子、
+  横截面标准化、前瞻标签、RankIC、组合构建、换手与交易成本、绩效评价、时间切分和常见偏差，
+  并给出可直接运行的 Python 示例。
+keywords:
+  - 横截面选股
+  - 量化回测
+  - 因子投资
+  - Python
+  - RankIC
 bibliography: references.bib
-github-user: computorg
-repo: "template-computo-python"
-status: submitted
+github-user: shjdjjfi
+repo: quant-cross-sectional-guide
+status: draft
 license: CC-BY-4.0
 citation:
   type: article-journal
   container-title: "Computo"
   issn: "2824-7795"
-  doi: "10.5072/computo.0000" # placeholder DOI (10.5072 is the official DOI test prefix), replace once assigned
+  doi: "10.5072/computo.0000"
 format:
-  computo-html: default
+  computo-html:
+    css: styles.css
   computo-pdf: default
 jupyter: python3
