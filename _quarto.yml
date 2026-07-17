@@ -3,7 +3,7 @@ project:
     - main.qmd
     - README.qmd
 
-title: "第一阶段：股票横截面选股与量化回测基本功"
+title: "大模型与量化"
 subtitle: "面向大模型研究者的 Python 可复现入门指南"
 author:
   - name: Zichen Song
