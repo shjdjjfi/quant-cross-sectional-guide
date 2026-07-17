@@ -1,9 +1,23 @@
-/* Keep the article readable on wide screens while preserving Computo styling. */
-main.content,
-#quarto-content main,
-.quarto-container,
-.page-columns {
-  max-width: 80em;
+/* =========================================================
+   Computo article custom styles
+   Purpose:
+   1. Center the full article layout.
+   2. Limit the desktop width to 80em.
+   3. Keep the title banner, metadata, body and TOC aligned.
+   4. Improve Chinese typography, code, tables and formulas.
+   ========================================================= */
+
+/* ---------- Global variables ---------- */
+
+:root {
+  --article-max-width: 80em;
+  --article-side-gap: 2rem;
+}
+
+/* ---------- Global typography ---------- */
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
@@ -17,6 +31,93 @@ body {
     Arial,
     sans-serif;
   line-height: 1.75;
+  overflow-x: hidden;
+}
+
+/* ---------- Center the title banner ---------- */
+
+/*
+Computo gives the title area its own container. Setting only max-width
+does not center it, so both width and automatic horizontal margins are
+required.
+*/
+.quarto-title-banner {
+  width: min(
+    var(--article-max-width),
+    calc(100% - var(--article-side-gap))
+  ) !important;
+  max-width: var(--article-max-width) !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  box-sizing: border-box;
+}
+
+/* Keep the title content aligned inside the centered banner. */
+.quarto-title-banner .quarto-title,
+.quarto-title-banner .quarto-title-block {
+  width: 100%;
+  max-width: none !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+/* ---------- Center the article grid ---------- */
+
+/*
+.page-columns contains the main text column and the right-side contents
+column. Centering this element centers the complete article layout,
+rather than centering the text column alone.
+*/
+.page-columns,
+#quarto-content.page-columns,
+#quarto-content .page-columns {
+  width: min(
+    var(--article-max-width),
+    calc(100% - var(--article-side-gap))
+  ) !important;
+  max-width: var(--article-max-width) !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  box-sizing: border-box;
+}
+
+/* Avoid a second nested width restriction inside the centered grid. */
+#quarto-content,
+main.content,
+.quarto-container,
+.quarto-container.page-columns {
+  max-width: none;
+}
+
+/* ---------- Main text ---------- */
+
+main.content {
+  min-width: 0;
+}
+
+main.content p,
+main.content li {
+  text-align: justify;
+  text-justify: inter-ideograph;
+  overflow-wrap: break-word;
+}
+
+/* ---------- Headings ---------- */
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  scroll-margin-top: 1rem;
+}
+
+/* ---------- Code ---------- */
+
+pre {
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 pre code {
@@ -24,20 +125,125 @@ pre code {
   line-height: 1.55;
 }
 
+/* Allow long code lines to remain readable on narrow screens. */
+.cell-output pre,
+.sourceCode pre,
+pre.sourceCode {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Tables ---------- */
+
 table {
+  max-width: 100%;
   font-size: 0.94rem;
 }
 
-.math.display {
+.table-responsive,
+.quarto-table-container {
   max-width: 100%;
   overflow-x: auto;
 }
 
+/* ---------- Mathematics ---------- */
+
+.math.display,
+.math.inline,
+.quarto-math,
+mjx-container,
+math[display="block"] {
+  max-width: 100%;
+}
+
+.math.display,
+.quarto-math,
+mjx-container[display="true"],
+math[display="block"] {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* ---------- Figures and media ---------- */
+
+img,
+svg,
+video,
+canvas,
+iframe {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ---------- Callouts ---------- */
+
+.callout {
+  max-width: 100%;
+  overflow-wrap: break-word;
+}
+
+/* ---------- Right-side table of contents ---------- */
+
+#TOC,
+nav[role="doc-toc"] {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+/* ---------- Responsive layout ---------- */
+
 @media (max-width: 90em) {
-  main.content,
-  #quarto-content main,
-  .quarto-container,
-  .page-columns {
-    max-width: calc(100vw - 2rem);
+  :root {
+    --article-side-gap: 2rem;
+  }
+
+  .quarto-title-banner,
+  .page-columns,
+  #quarto-content.page-columns,
+  #quarto-content .page-columns {
+    width: calc(100% - var(--article-side-gap)) !important;
+    max-width: none !important;
+  }
+}
+
+@media (max-width: 768px) {
+  :root {
+    --article-side-gap: 1rem;
+  }
+
+  body {
+    line-height: 1.68;
+  }
+
+  main.content p,
+  main.content li {
+    text-align: left;
+  }
+
+  pre code {
+    font-size: 0.86rem;
+  }
+}
+
+/* ---------- Print ---------- */
+
+@media print {
+  .quarto-title-banner,
+  .page-columns,
+  #quarto-content.page-columns,
+  #quarto-content .page-columns {
+    width: 100% !important;
+    max-width: none !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  body {
+    overflow: visible;
+  }
+
+  pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
 }
