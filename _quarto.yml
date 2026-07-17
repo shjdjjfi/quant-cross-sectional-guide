@@ -1,0 +1,47 @@
+project:
+  type: default
+  render:
+    - main.qmd
+    - README.qmd
+
+title: "Template for contribution to Computo"
+subtitle: "Example dedicated to `Python` users"
+author:
+  - name: Jane Doe
+    corresponding: true
+    email: janedoe@nowhere.moon
+    url: https://janedoe.someplace.themoon.org
+    orcid: 0000-0000-0000-0000
+    affiliations:
+      - name: Name of Affiliation one
+        department: Statistics
+        url: https://someplace.themoon.org
+  - name: John Doe
+    email: johndoe@nowhere.moon
+    url: https://johndoe.someplace.themoon.org
+    orcid: 0000-0000-0000-0000
+    affiliations:
+      - name: Name of Affiliation two
+        department: Computer Science
+        url: https://someplace.themoon.org
+date: last-modified
+date-modified: last-modified
+abstract: >+
+  Template for preparing a submission to Computo, using the [quarto journal extension](https://github.com/computorg/computo-quarto-extension), the Jupyter kernel (Python user) and the environment files to set-up the dependencies.
+
+  For a detailed, step-by-step guide on preparing your article, setting up the continuous integration and submitting it to Computo, please consult the [guidelines for authors](https://computo-journal.org/site/guidelines-authors.html).
+keywords: [key1, key2, key3]
+bibliography: references.bib
+github-user: computorg
+repo: "template-computo-python"
+status: submitted
+license: CC-BY-4.0
+citation:
+  type: article-journal
+  container-title: "Computo"
+  issn: "2824-7795"
+  doi: "10.5072/computo.0000" # placeholder DOI (10.5072 is the official DOI test prefix), replace once assigned
+format:
+  computo-html: default
+  computo-pdf: default
+jupyter: python3
