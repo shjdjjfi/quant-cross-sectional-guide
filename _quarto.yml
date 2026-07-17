@@ -1,5 +1,4 @@
 project:
-  type: default
   render:
     - main.qmd
     - README.qmd
