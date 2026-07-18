@@ -1,0 +1,4008 @@
+::: {.callout-important}
+## 本阶段的最终目标
+
+本阶段不是“看完一门量化课程”，而是从零完成一条可以审计、可以复现、不会明显使用未来信息的股票横截面研究流水线。
+
+完成本文全部步骤后，你应能够独立完成：
+
+1. 读取或生成股票面板数据；
+2. 检查价格、成交量、日期和股票代码；
+3. 计算收益率和前瞻收益标签；
+4. 构造动量、反转、波动率和流动性因子；
+5. 按交易日进行横截面去极值与标准化；
+6. 计算 RankIC、分组收益和因子覆盖率；
+7. 将股票分数转换为 Top-20% 等权组合；
+8. 计算换手率和交易成本；
+9. 报告年化收益、Sharpe、最大回撤等指标；
+10. 使用时间切分而不是随机切分；
+11. 识别前视偏差、幸存者偏差和复权错误；
+12. 从命令行一次运行完整回测并生成结果文件。
+
+建议用时为 **14 天、30--40 小时**。第一阶段不使用机器学习、不使用大模型，也不以获得高收益为目标。
+:::
+
+# 一、怎样使用这份学习指南
+
+本文按照“学习目标 → 原理 → 示例代码 → 练习 → 验收标准”的顺序组织。建议严格按章节顺序执行，不要跳过数据审计、信号时点和交易成本。
+
+每一天都应留下可验证的产出，而不是只阅读概念。推荐建立如下项目：
+
+```text
+phase1_quant_basics/
+├── data/
+│   └── prices.csv
+├── notebooks/
+│   └── exploration.ipynb
+├── src/
+│   └── phase1_cross_sectional_backtest.py
+├── outputs/
+│   ├── audit.json
+│   ├── factor_summary.csv
+│   ├── rank_ic.csv
+│   ├── quantile_returns.csv
+│   ├── daily_backtest.csv
+│   ├── cost_sensitivity.csv
+│   ├── metrics.json
+│   ├── rank_ic.png
+│   └── net_value.png
+├── requirements.txt
+└── README.md
+```
+
+建议学习方式：
+
+- 第一次：使用本文提供的模拟数据，保证全流程运行成功；
+- 第二次：替换成真实历史行情，检查数据定义；
+- 第三次：只修改一个因子或一个组合参数，观察结果如何变化；
+- 每次修改都记录原因，不要同时改很多地方。
+
+::: {.callout-warning}
+## 不要一开始就追求收益
+
+模拟数据中的结果没有投资意义。真实数据上的短期高收益也可能来自未来信息泄露、幸存者偏差、数据窥探或错误的交易时点。第一阶段最重要的成果是正确流程，而不是漂亮曲线。
+:::
+
+# 二、完整学习路线
+
+| 天数 | 核心主题 | 建议用时 | 当天必须产出 |
+|---|---|---:|---|
+| 第 0 天 | 环境与项目初始化 | 1--2 小时 | Python 环境、目录、依赖文件 |
+| 第 1 天 | 股票面板数据与交易日 | 2 小时 | 可读取的数据表与审计摘要 |
+| 第 2 天 | 收益率、复权与累计净值 | 2--3 小时 | 单只股票收益和净值序列 |
+| 第 3 天 | 横截面问题与股票排序 | 2 小时 | 每日横截面排名 |
+| 第 4 天 | 四类传统因子 | 3 小时 | 四个原始因子 |
+| 第 5 天 | 缺失值、去极值和标准化 | 3 小时 | 四个标准化因子 |
+| 第 6 天 | 标签、时点与信息可得性 | 3 小时 | 未来 1 日和 5 日收益标签 |
+| 第 7 天 | RankIC 与分组检验 | 3 小时 | RankIC、ICIR、五分组收益 |
+| 第 8 天 | 组合构建与权重 | 3 小时 | Top-20% 等权持仓 |
+| 第 9 天 | 换手率与交易成本 | 2--3 小时 | 成本前后收益、成本敏感性 |
+| 第 10 天 | 绩效指标与图表 | 3 小时 | 指标表、累计净值、回撤 |
+| 第 11 天 | 回测偏差与可交易约束 | 2--3 小时 | 偏差检查清单 |
+| 第 12 天 | 时间切分与滚动验证 | 3 小时 | 训练、验证、测试时间区间 |
+| 第 13 天 | 完整模块化回测 | 4 小时 | 一条命令运行全部流程 |
+| 第 14 天 | 报告、复盘与验收 | 2--3 小时 | 2--4 页阶段报告 |
+
+# 三、第 0 天：搭建环境与项目
+
+## 3.1 需要掌握的软件
+
+最低要求：
+
+- Python 3.10 或更高版本；
+- NumPy；
+- Pandas；
+- Matplotlib；
+- 一个代码编辑器，例如 VS Code、PyCharm 或 JupyterLab。
+
+本阶段不需要：
+
+- PyTorch；
+- TensorFlow；
+- Qlib；
+- LightGBM；
+- 大模型 API；
+- GPU。
+
+## 3.2 创建项目目录
+
+Windows PowerShell：
+
+```powershell
+mkdir phase1_quant_basics
+cd phase1_quant_basics
+
+mkdir data
+mkdir notebooks
+mkdir src
+mkdir outputs
+```
+
+macOS 或 Linux：
+
+```bash
+mkdir -p phase1_quant_basics/{data,notebooks,src,outputs}
+cd phase1_quant_basics
+```
+
+## 3.3 创建 Python 虚拟环境
+
+Windows：
+
+```powershell
+python -m venv .venv
+.venv\Scripts\activate
+```
+
+macOS 或 Linux：
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+激活后，终端前面通常会出现：
+
+```text
+(.venv)
+```
+
+## 3.4 创建依赖文件
+
+建立 `requirements.txt`：
+
+```text
+numpy>=1.26
+pandas>=2.0
+matplotlib>=3.8
+```
+
+安装依赖：
+
+```bash
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+检查环境：
+
+```bash
+python -c "import numpy, pandas, matplotlib; print('环境正常')"
+```
+
+## 3.5 建立最小测试程序
+
+创建 `src/test_environment.py`：
+
+```python
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+print("NumPy:", np.__version__)
+print("Pandas:", pd.__version__)
+
+x = np.arange(10)
+y = x ** 2
+
+plt.plot(x, y)
+plt.title("Environment Test")
+plt.savefig("outputs/environment_test.png", dpi=150)
+plt.close()
+
+print("已生成 outputs/environment_test.png")
+```
+
+运行：
+
+```bash
+python src/test_environment.py
+```
+
+## 3.6 第 0 天验收
+
+你应确认：
+
+- `python --version` 能正常运行；
+- 三个依赖可以导入；
+- `outputs/environment_test.png` 已生成；
+- 当前工作目录中有 `data`、`src` 和 `outputs`。
+
+# 四、第 1 天：理解股票面板数据
+
+## 4.1 一行数据代表什么
+
+横截面研究最常用长表结构。每一行表示股票 $i$ 在日期 $t$ 的观测值：
+
+$$
+x_{i,t}
+$$
+
+最小字段如下：
+
+| 字段 | 含义 | 是否必须 |
+|---|---|---|
+| `date` | 交易日期 | 是 |
+| `ticker` | 股票代码 | 是 |
+| `close` | 收盘价或复权收盘价 | 是 |
+| `volume` | 成交量 | 是 |
+| `open` | 开盘价 | 可选 |
+| `high` | 最高价 | 可选 |
+| `low` | 最低价 | 可选 |
+| `amount` | 成交额 | 可选 |
+| `sector` | 行业分类 | 可选 |
+| `is_tradable` | 当日是否可交易 | 推荐 |
+| `market_cap` | 总市值或流通市值 | 可选 |
+
+示例：
+
+```text
+date,ticker,close,volume
+2024-01-02,000001,9.82,53210000
+2024-01-02,000002,10.41,28930000
+2024-01-03,000001,9.95,61420000
+```
+
+## 4.2 长表和宽表
+
+长表：
+
+```text
+date        ticker   close
+2024-01-02  A        10.0
+2024-01-02  B        20.0
+2024-01-03  A        10.2
+```
+
+宽表：
+
+```text
+date        A      B
+2024-01-02  10.0   20.0
+2024-01-03  10.2   20.4
+```
+
+横截面因子处理通常优先使用长表，因为：
+
+- 更容易按 `date` 分组；
+- 更容易加入行业、成交量和可交易状态；
+- 更容易与财务和文本特征合并；
+- 更适合 Pandas 的 `groupby`。
+
+## 4.3 生成可运行的模拟数据
+
+```python
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+
+
+def make_demo_panel(
+    n_stocks: int = 80,
+    n_days: int = 420,
+    seed: int = 42,
+) -> pd.DataFrame:
+    """生成用于学习流程的模拟股票面板。"""
+    rng = np.random.default_rng(seed)
+
+    dates = pd.bdate_range(
+        start="2023-01-02",
+        periods=n_days,
+    )
+    tickers = [f"S{i:03d}" for i in range(n_stocks)]
+    sectors = [f"Sector_{i}" for i in range(8)]
+
+    market_return = rng.normal(
+        loc=0.0002,
+        scale=0.009,
+        size=n_days,
+    )
+
+    frames: list[pd.DataFrame] = []
+
+    for stock_id, ticker in enumerate(tickers):
+        beta = rng.uniform(0.7, 1.3)
+        idiosyncratic_vol = rng.uniform(0.008, 0.018)
+
+        idiosyncratic_return = rng.normal(
+            loc=0.0,
+            scale=idiosyncratic_vol,
+            size=n_days,
+        )
+
+        stock_return = (
+            beta * market_return
+            + idiosyncratic_return
+        )
+
+        close = 50.0 * np.exp(np.cumsum(stock_return))
+        volume = rng.lognormal(
+            mean=14.0,
+            sigma=0.45,
+            size=n_days,
+        )
+
+        frame = pd.DataFrame({
+            "date": dates,
+            "ticker": ticker,
+            "sector": sectors[stock_id % len(sectors)],
+            "close": close,
+            "volume": volume,
+            "is_tradable": True,
+        })
+        frames.append(frame)
+
+    panel = pd.concat(frames, ignore_index=True)
+
+    return (
+        panel
+        .sort_values(["ticker", "date"])
+        .reset_index(drop=True)
+    )
+
+
+panel = make_demo_panel()
+print(panel.head())
+print(panel.shape)
+```
+
+## 4.4 读取真实 CSV
+
+```python
+from pathlib import Path
+
+import pandas as pd
+
+
+def load_price_csv(path: str | Path) -> pd.DataFrame:
+    path = Path(path)
+
+    if not path.exists():
+        raise FileNotFoundError(f"文件不存在：{path}")
+
+    df = pd.read_csv(
+        path,
+        parse_dates=["date"],
+        dtype={"ticker": str},
+    )
+
+    return (
+        df
+        .sort_values(["ticker", "date"])
+        .reset_index(drop=True)
+    )
+
+
+panel = load_price_csv("data/prices.csv")
+```
+
+注意：股票代码必须按字符串读取，否则 `000001` 可能变成数字 `1`。
+
+## 4.5 编写数据审计函数
+
+```python
+from __future__ import annotations
+
+import pandas as pd
+
+
+def audit_panel(df: pd.DataFrame) -> dict:
+    required_columns = {
+        "date",
+        "ticker",
+        "close",
+        "volume",
+    }
+
+    missing_columns = required_columns - set(df.columns)
+
+    if missing_columns:
+        raise ValueError(
+            f"缺少必要字段：{sorted(missing_columns)}"
+        )
+
+    if df.empty:
+        raise ValueError("数据表为空。")
+
+    if df.duplicated(["date", "ticker"]).any():
+        duplicated = df[
+            df.duplicated(
+                ["date", "ticker"],
+                keep=False,
+            )
+        ]
+        raise ValueError(
+            "存在重复的 date-ticker 记录：\n"
+            f"{duplicated.head()}"
+        )
+
+    key_columns = ["date", "ticker", "close"]
+
+    if df[key_columns].isna().any().any():
+        missing_count = (
+            df[key_columns]
+            .isna()
+            .sum()
+            .to_dict()
+        )
+        raise ValueError(
+            f"关键字段存在缺失：{missing_count}"
+        )
+
+    if (df["close"] <= 0).any():
+        raise ValueError("存在小于或等于 0 的价格。")
+
+    if (df["volume"] < 0).any():
+        raise ValueError("存在负成交量。")
+
+    ordered = df.sort_values(["ticker", "date"])
+
+    monotonic_check = (
+        ordered
+        .groupby("ticker")["date"]
+        .apply(lambda s: s.is_monotonic_increasing)
+        .all()
+    )
+
+    if not monotonic_check:
+        raise ValueError("部分股票日期顺序异常。")
+
+    counts_by_date = df.groupby("date")["ticker"].nunique()
+
+    return {
+        "rows": int(len(df)),
+        "stocks": int(df["ticker"].nunique()),
+        "trading_days": int(df["date"].nunique()),
+        "start_date": str(df["date"].min().date()),
+        "end_date": str(df["date"].max().date()),
+        "min_stocks_per_day": int(counts_by_date.min()),
+        "median_stocks_per_day": float(counts_by_date.median()),
+        "max_stocks_per_day": int(counts_by_date.max()),
+    }
+
+
+summary = audit_panel(panel)
+print(summary)
+```
+
+## 4.6 检查股票覆盖率
+
+```python
+coverage_by_date = (
+    panel
+    .groupby("date")["ticker"]
+    .nunique()
+    .rename("n_stocks")
+)
+
+print(coverage_by_date.describe())
+```
+
+如果每日股票数突然下降，可能说明：
+
+- 数据缺失；
+- 股票池定义发生变化；
+- 某段数据下载失败；
+- 大量股票停牌；
+- 日期合并错误。
+
+## 4.7 第 1 天练习
+
+1. 将模拟数据保存为 `data/prices.csv`；
+2. 再从 CSV 读取；
+3. 删除一行，观察审计函数是否仍通过；
+4. 制造一个重复 `date-ticker`，确认函数能报错；
+5. 将一个价格改成负数，确认函数能报错。
+
+保存数据：
+
+```python
+panel.to_csv(
+    "data/prices.csv",
+    index=False,
+    encoding="utf-8-sig",
+)
+```
+
+## 4.8 第 1 天验收
+
+你应能解释：
+
+- 为什么股票代码要作为字符串；
+- 为什么不能允许重复的 `date-ticker`；
+- 为什么真实股票池每天的股票数量可能不同；
+- 为什么仅使用当前仍上市股票会产生幸存者偏差。
+
+# 五、第 2 天：收益率、复权与累计净值
+
+## 5.1 简单收益率
+
+从价格 $P_t$ 到 $P_{t+1}$ 的简单收益率：
+
+$$
+r_{t+1}
+=
+\frac{P_{t+1}}{P_t}
+-
+1
+$$
+
+```python
+panel["ret_1d"] = (
+    panel
+    .groupby("ticker")["close"]
+    .pct_change()
+)
+```
+
+## 5.2 对数收益率
+
+$$
+\ell_{t+1}
+=
+\log(P_{t+1})
+-
+\log(P_t)
+$$
+
+```python
+import numpy as np
+
+panel["log_ret_1d"] = (
+    panel
+    .groupby("ticker")["close"]
+    .transform(lambda s: np.log(s).diff())
+)
+```
+
+区别：
+
+- 简单收益率适合组合实际收益；
+- 对数收益率具有时间可加性；
+- 本阶段组合回测统一使用简单收益率。
+
+## 5.3 多期收益
+
+过去 5 日收益：
+
+```python
+panel["ret_5d_past"] = (
+    panel
+    .groupby("ticker")["close"]
+    .pct_change(5)
+)
+```
+
+过去 20 日收益：
+
+```python
+panel["ret_20d_past"] = (
+    panel
+    .groupby("ticker")["close"]
+    .pct_change(20)
+)
+```
+
+## 5.4 累计净值
+
+若初始财富为 1：
+
+$$
+W_T
+=
+\prod_{t=1}^{T}
+(1+r_t)
+$$
+
+```python
+one_stock = (
+    panel[panel["ticker"] == "S000"]
+    .copy()
+)
+
+one_stock["wealth"] = (
+    1.0
+    + one_stock["ret_1d"].fillna(0.0)
+).cumprod()
+
+one_stock["cumulative_return"] = (
+    one_stock["wealth"] - 1.0
+)
+```
+
+## 5.5 绘制单只股票净值
+
+```python
+import matplotlib.pyplot as plt
+
+ax = one_stock.plot(
+    x="date",
+    y="wealth",
+    figsize=(10, 5),
+    title="Single-stock wealth curve",
+)
+
+ax.set_xlabel("Date")
+ax.set_ylabel("Wealth")
+ax.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig(
+    "outputs/single_stock_wealth.png",
+    dpi=160,
+)
+plt.close()
+```
+
+## 5.6 为什么需要复权价格
+
+分红、拆股、送股会造成原始价格机械跳变。若直接用未复权价格计算收益，可能把公司行为误判为投资损失或因子信号。
+
+你必须确认数据供应商的字段定义：
+
+- 前复权；
+- 后复权；
+- 总回报价格；
+- 原始价格；
+- 是否包含现金分红。
+
+::: {.callout-warning}
+## 价格口径必须一致
+
+不能用前复权价格构造因子，却用原始价格计算收益；也不能把不同复权基准的数据直接拼接。因子、标签和回测收益应使用逻辑一致的价格序列。
+:::
+
+## 5.7 异常收益检查
+
+```python
+extreme_returns = panel[
+    panel["ret_1d"].abs() > 0.30
+][
+    ["date", "ticker", "close", "ret_1d"]
+]
+
+print(extreme_returns.head(20))
+```
+
+异常值可能来自：
+
+- 涨跌停制度；
+- 复权错误；
+- 数据单位变化；
+- 股票代码映射错误；
+- 真实极端行情。
+
+## 5.8 第 2 天练习
+
+1. 手工计算三天价格的两个日收益；
+2. 用连乘计算累计收益；
+3. 比较简单收益率与对数收益率；
+4. 找出模拟数据中绝对收益最大的 10 行；
+5. 绘制两只股票的净值曲线。
+
+## 5.9 第 2 天验收
+
+你应能解释：
+
+- 多期简单收益为什么不能直接相加；
+- 复权价格为什么重要；
+- `pct_change(20)` 表示什么；
+- 收益率第一行为什么是缺失值。
+
+# 六、第 3 天：横截面问题与股票排序
+
+## 6.1 时间序列和横截面的区别
+
+时间序列问题：
+
+> 对同一只股票，今天相对它自己的历史是否强势？
+
+横截面问题：
+
+> 在同一个交易日，哪些股票相对其他股票得分更高？
+
+横截面样本单位是：
+
+$$
+(i,t)
+$$
+
+其中 $i$ 是股票，$t$ 是交易日。
+
+## 6.2 每日横截面排名
+
+```python
+panel["ret_20d_rank"] = (
+    panel
+    .groupby("date")["ret_20d_past"]
+    .rank(
+        ascending=False,
+        method="average",
+    )
+)
+```
+
+## 6.3 百分位排名
+
+```python
+panel["ret_20d_percentile"] = (
+    panel
+    .groupby("date")["ret_20d_past"]
+    .rank(
+        pct=True,
+        method="average",
+    )
+)
+```
+
+解释：
+
+- 接近 1：横截面中数值较大；
+- 接近 0：横截面中数值较小；
+- 排名只在同一个日期内部比较。
+
+## 6.4 检查某一天的排序
+
+```python
+sample_date = panel["date"].drop_duplicates().iloc[100]
+
+sample = (
+    panel[panel["date"] == sample_date]
+    [
+        [
+            "date",
+            "ticker",
+            "ret_20d_past",
+            "ret_20d_percentile",
+        ]
+    ]
+    .sort_values(
+        "ret_20d_percentile",
+        ascending=False,
+    )
+)
+
+print(sample.head(10))
+```
+
+## 6.5 避免全样本排序
+
+错误：
+
+```python
+panel["wrong_rank"] = panel["ret_20d_past"].rank(pct=True)
+```
+
+它将不同年份的股票混在一起比较，不是横截面排序。
+
+正确：
+
+```python
+panel["correct_rank"] = (
+    panel
+    .groupby("date")["ret_20d_past"]
+    .rank(pct=True)
+)
+```
+
+## 6.6 行业内排名
+
+若有行业字段：
+
+```python
+panel["industry_rank"] = (
+    panel
+    .groupby(
+        ["date", "sector"]
+    )["ret_20d_past"]
+    .rank(pct=True)
+)
+```
+
+行业内排名回答：
+
+> 在同一行业中，这只股票的因子值处于什么位置？
+
+第一阶段主实验仍使用全市场横截面，但需要理解行业结构可能造成伪因子暴露。
+
+## 6.7 第 3 天练习
+
+1. 对过去 5 日收益做每日排名；
+2. 输出某一天排名前 10 和后 10 的股票；
+3. 比较全市场排名和行业内排名；
+4. 解释为什么排名相同的股票需要指定 `method`。
+
+## 6.8 第 3 天验收
+
+你应能独立回答：
+
+- 横截面模型最终输出的是数值还是排序；
+- 为什么必须按 `date` 分组；
+- 百分位排名 0.95 表示什么；
+- 行业内排名与全市场排名有什么区别。
+
+# 七、第 4 天：构造第一批传统因子
+
+第一阶段先使用四个易于解释的因子。动量是经典横截面收益异象之一 [@jegadeesh1993]，但本文不假设其在任何市场和时期都有效。
+
+## 7.1 20 日动量
+
+$$
+\operatorname{Mom}_{i,t}^{20}
+=
+\frac{P_{i,t}}{P_{i,t-20}}
+-
+1
+$$
+
+```python
+panel["mom_20"] = (
+    panel
+    .groupby("ticker")["close"]
+    .pct_change(20)
+)
+```
+
+含义：过去约一个交易月表现较强的股票，是否继续相对强势。
+
+## 7.2 5 日短期反转
+
+$$
+\operatorname{Rev}_{i,t}^{5}
+=
+-
+\left(
+\frac{P_{i,t}}{P_{i,t-5}}
+-
+1
+\right)
+$$
+
+```python
+panel["reversal_5"] = -(
+    panel
+    .groupby("ticker")["close"]
+    .pct_change(5)
+)
+```
+
+取负号后，过去 5 日跌幅较大的股票得到更高反转分数。
+
+## 7.3 20 日历史波动率
+
+$$
+\operatorname{Vol}_{i,t}^{20}
+=
+\operatorname{Std}
+\left(
+r_{i,t-19},
+\ldots,
+r_{i,t}
+\right)
+$$
+
+```python
+panel["ret_1d"] = (
+    panel
+    .groupby("ticker")["close"]
+    .pct_change()
+)
+
+panel["vol_20"] = (
+    panel
+    .groupby("ticker")["ret_1d"]
+    .transform(
+        lambda s: s.rolling(
+            window=20,
+            min_periods=20,
+        ).std()
+    )
+)
+```
+
+## 7.4 流动性代理变量
+
+成交额近似：
+
+$$
+A_{i,t}
+=
+P_{i,t}V_{i,t}
+$$
+
+对数流动性：
+
+$$
+\operatorname{Liquidity}_{i,t}
+=
+\log(1+A_{i,t})
+$$
+
+```python
+import numpy as np
+
+panel["amount_proxy"] = (
+    panel["close"] * panel["volume"]
+)
+
+panel["liquidity"] = np.log1p(
+    panel["amount_proxy"]
+)
+```
+
+## 7.5 因子缺失率
+
+```python
+raw_factors = [
+    "mom_20",
+    "reversal_5",
+    "vol_20",
+    "liquidity",
+]
+
+missing_rate = (
+    panel[raw_factors]
+    .isna()
+    .mean()
+    .sort_values(ascending=False)
+)
+
+print(missing_rate)
+```
+
+动量和波动率前 20 个交易日缺失是正常的，因为窗口尚未形成。
+
+## 7.6 因子描述统计
+
+```python
+factor_summary = (
+    panel[raw_factors]
+    .describe(
+        percentiles=[
+            0.01,
+            0.05,
+            0.50,
+            0.95,
+            0.99,
+        ]
+    )
+    .T
+)
+
+print(factor_summary)
+```
+
+## 7.7 第 4 天练习
+
+1. 增加 60 日动量；
+2. 增加 10 日波动率；
+3. 比较 20 日和 60 日动量的相关性；
+4. 查看每个因子的 1% 和 99% 分位数；
+5. 解释为什么流动性使用对数变换。
+
+## 7.8 第 4 天验收
+
+你应能解释：
+
+- 因子窗口为何产生缺失值；
+- 动量和反转为何方向不同；
+- 波动率因子为什么通常需要取负后参与综合评分；
+- 成交额为什么高度偏态。
+
+# 八、第 5 天：横截面清洗、去极值和标准化
+
+## 8.1 为什么不能直接相加
+
+不同因子量纲不同：
+
+- 动量可能约为 `0.10`；
+- 波动率可能约为 `0.02`；
+- 对数成交额可能约为 `20`。
+
+直接相加会让数值范围最大的因子支配结果。
+
+## 8.2 横截面缺失处理
+
+第一阶段推荐：
+
+- 不用未来值填充；
+- 不跨股票填充；
+- 窗口不足导致的缺失直接保留；
+- 组合构建时只使用因子完整的股票。
+
+```python
+valid_factor_mask = panel[
+    [
+        "mom_20",
+        "reversal_5",
+        "vol_20",
+        "liquidity",
+    ]
+].notna().all(axis=1)
+
+print(valid_factor_mask.mean())
+```
+
+## 8.3 分位数去极值
+
+```python
+import pandas as pd
+
+
+def cross_sectional_winsorize(
+    series: pd.Series,
+    lower_quantile: float = 0.01,
+    upper_quantile: float = 0.99,
+) -> pd.Series:
+    valid_count = series.notna().sum()
+
+    if valid_count < 5:
+        return series
+
+    lower = series.quantile(lower_quantile)
+    upper = series.quantile(upper_quantile)
+
+    return series.clip(lower=lower, upper=upper)
+```
+
+应用：
+
+```python
+panel["mom_20_w"] = (
+    panel
+    .groupby("date")["mom_20"]
+    .transform(cross_sectional_winsorize)
+)
+```
+
+## 8.4 横截面 z-score
+
+$$
+z_{i,t}
+=
+\frac{x_{i,t}-\mu_t}{\sigma_t}
+$$
+
+```python
+def cross_sectional_zscore(
+    series: pd.Series,
+) -> pd.Series:
+    mean = series.mean()
+    std = series.std(ddof=0)
+
+    if pd.isna(std) or std < 1e-12:
+        return pd.Series(
+            data=np.nan,
+            index=series.index,
+        )
+
+    return (series - mean) / std
+```
+
+应用：
+
+```python
+panel["mom_20_z"] = (
+    panel
+    .groupby("date")["mom_20_w"]
+    .transform(cross_sectional_zscore)
+)
+```
+
+## 8.5 批量处理四个因子
+
+```python
+raw_factors = [
+    "mom_20",
+    "reversal_5",
+    "vol_20",
+    "liquidity",
+]
+
+for factor in raw_factors:
+    winsorized_name = f"{factor}_w"
+    standardized_name = f"{factor}_z"
+
+    panel[winsorized_name] = (
+        panel
+        .groupby("date")[factor]
+        .transform(cross_sectional_winsorize)
+    )
+
+    panel[standardized_name] = (
+        panel
+        .groupby("date")[winsorized_name]
+        .transform(cross_sectional_zscore)
+    )
+```
+
+## 8.6 检查每日均值和标准差
+
+```python
+daily_mom_statistics = (
+    panel
+    .groupby("date")["mom_20_z"]
+    .agg(["mean", "std", "count"])
+)
+
+print(daily_mom_statistics.head())
+```
+
+在股票数量足够时：
+
+- 每日均值应接近 0；
+- 每日标准差应接近 1。
+
+## 8.7 排名标准化
+
+另一种稳健方法：
+
+```python
+panel["mom_20_rank_score"] = (
+    panel
+    .groupby("date")["mom_20"]
+    .rank(pct=True)
+    - 0.5
+)
+```
+
+它将数值映射到约 $[-0.5,0.5]$，对极端值不敏感。
+
+## 8.8 简化行业中性化
+
+先计算行业均值，再减去行业均值：
+
+```python
+panel["mom_20_industry_neutral"] = (
+    panel["mom_20_z"]
+    - panel
+      .groupby(
+          ["date", "sector"]
+      )["mom_20_z"]
+      .transform("mean")
+)
+```
+
+这只是入门近似。后续可以使用横截面回归同时控制行业和市值。
+
+## 8.9 错误示例：全样本标准化
+
+```python
+# 错误：未来时期参与了过去时期的均值和标准差。
+panel["wrong_zscore"] = (
+    panel["mom_20"]
+    - panel["mom_20"].mean()
+) / panel["mom_20"].std()
+```
+
+## 8.10 第 5 天练习
+
+1. 分别使用 1% 和 5% 去极值；
+2. 比较 z-score 与百分位排名；
+3. 检查任意一天四个标准化因子的均值；
+4. 输出去极值前后最大值；
+5. 构造行业中性动量。
+
+## 8.11 第 5 天验收
+
+你应能解释：
+
+- 为什么横截面标准化必须按日期；
+- 去极值和删除异常值有什么区别；
+- 标准化后为何仍有缺失值；
+- 行业中性化解决了什么问题。
+
+# 九、第 6 天：标签、信号时点和未来信息泄露
+
+## 9.1 未来 1 日收益标签
+
+$$
+y_{i,t}^{(1)}
+=
+\frac{P_{i,t+1}}{P_{i,t}}
+-
+1
+$$
+
+```python
+panel["target_1d"] = (
+    panel
+    .groupby("ticker")["close"]
+    .shift(-1)
+    / panel["close"]
+    - 1.0
+)
+```
+
+## 9.2 未来 5 日收益标签
+
+$$
+y_{i,t}^{(5)}
+=
+\frac{P_{i,t+5}}{P_{i,t}}
+-
+1
+$$
+
+```python
+panel["target_5d"] = (
+    panel
+    .groupby("ticker")["close"]
+    .shift(-5)
+    / panel["close"]
+    - 1.0
+)
+```
+
+## 9.3 为什么 `shift(-5)` 不能作为特征
+
+`shift(-5)` 将未来价格移动到当前行。它只能用于：
+
+- 计算监督学习标签；
+- 计算 RankIC；
+- 评价因子；
+- 计算未来实现收益。
+
+它绝不能用于：
+
+- 构造当前因子；
+- 选择股票；
+- 标准化当前特征；
+- 调整当前持仓。
+
+错误：
+
+```python
+features = [
+    "mom_20_z",
+    "target_5d",
+]
+```
+
+正确：
+
+```python
+features = [
+    "mom_20_z",
+    "reversal_5_z",
+    "vol_20_z",
+    "liquidity_z",
+]
+
+target = "target_5d"
+
+assert target not in features
+```
+
+## 9.4 信息时点时间线
+
+使用收盘价因子时，保守时间线如下：
+
+| 时间 | 可获得的信息 | 能否交易 |
+|---|---|---|
+| 日期 $t$ 收盘前 | 不知道完整收盘价 | 不能使用完整日因子 |
+| 日期 $t$ 收盘后 | 获得日期 $t$ 收盘数据 | 可以生成信号 |
+| 日期 $t+1$ | 使用日期 $t$ 信号交易 | 可以 |
+| 日期 $t+1$ 至 $t+2$ | 收益实现 | 用于评价 |
+
+## 9.5 将综合分数滞后一天
+
+```python
+panel["factor_score"] = (
+    0.50 * panel["mom_20_z"]
+    + 0.25 * panel["reversal_5_z"]
+    - 0.20 * panel["vol_20_z"]
+    + 0.05 * panel["liquidity_z"]
+)
+
+panel["signal_lag1"] = (
+    panel
+    .groupby("ticker")["factor_score"]
+    .shift(1)
+)
+```
+
+日期 $t$ 的组合使用日期 $t-1$ 已生成的信号。
+
+## 9.6 更严格的开盘到开盘回测
+
+若拥有开盘价，可以构造：
+
+$$
+r_{t+1}^{\mathrm{open\ to\ open}}
+=
+\frac{O_{t+2}}{O_{t+1}}
+-
+1
+$$
+
+日期 $t$ 收盘后生成信号，日期 $t+1$ 开盘交易，持有到日期 $t+2$ 开盘。
+
+```python
+panel["open_fwd_return"] = (
+    panel
+    .groupby("ticker")["open"]
+    .shift(-2)
+    / panel
+      .groupby("ticker")["open"]
+      .shift(-1)
+    - 1.0
+)
+```
+
+本文主示例只使用收盘数据，因此采用信号滞后一日的简化方式。
+
+## 9.7 自动检查特征中是否含标签
+
+```python
+feature_columns = [
+    "mom_20_z",
+    "reversal_5_z",
+    "vol_20_z",
+    "liquidity_z",
+]
+
+forbidden_columns = {
+    "target_1d",
+    "target_5d",
+    "ret_fwd_1d",
+}
+
+overlap = set(feature_columns) & forbidden_columns
+
+if overlap:
+    raise ValueError(
+        f"特征中包含未来标签：{sorted(overlap)}"
+    )
+```
+
+## 9.8 第 6 天练习
+
+1. 构造未来 10 日收益；
+2. 检查每只股票最后 5 行标签为何缺失；
+3. 画出特征日、信号日、交易日和收益实现日；
+4. 删除 `shift(1)`，解释为什么结果可能虚高；
+5. 给每个字段标记 `available_time`。
+
+## 9.9 第 6 天验收
+
+你应能准确解释：
+
+- `shift(1)` 和 `shift(-1)` 的方向；
+- 标签为什么只能用于评价；
+- 当日收盘因子为什么不能假设当日收盘成交；
+- 财务数据为什么必须使用实际披露日期。
+
+# 十、第 7 天：RankIC、ICIR 和分组收益
+
+## 10.1 RankIC 定义
+
+每日 RankIC 是因子分数与未来收益秩之间的 Spearman 相关：
+
+$$
+\operatorname{RankIC}_t
+=
+\operatorname{Corr}_{\mathrm{Spearman}}
+\left(
+s_{i,t},
+y_{i,t}^{(h)}
+\right)
+$$
+
+## 10.2 单日 RankIC 函数
+
+```python
+import numpy as np
+import pandas as pd
+
+
+def calculate_one_day_rank_ic(
+    group: pd.DataFrame,
+    score_column: str = "factor_score",
+    target_column: str = "target_5d",
+    minimum_stocks: int = 10,
+) -> float:
+    valid = group[
+        [score_column, target_column]
+    ].dropna()
+
+    if len(valid) < minimum_stocks:
+        return np.nan
+
+    if valid[score_column].nunique() < 2:
+        return np.nan
+
+    if valid[target_column].nunique() < 2:
+        return np.nan
+
+    ranked = valid.rank(method="average")
+
+    return float(
+        ranked[score_column].corr(
+            ranked[target_column]
+        )
+    )
+```
+
+## 10.3 计算日度 RankIC
+
+```python
+rank_ic = (
+    panel
+    .groupby("date")
+    .apply(
+        calculate_one_day_rank_ic,
+        include_groups=False,
+    )
+    .dropna()
+    .rename("rank_ic")
+)
+
+print(rank_ic.head())
+```
+
+若 Pandas 版本不支持 `include_groups=False`，可写：
+
+```python
+rank_ic = (
+    panel
+    .groupby("date")[
+        ["factor_score", "target_5d"]
+    ]
+    .apply(calculate_one_day_rank_ic)
+    .dropna()
+    .rename("rank_ic")
+)
+```
+
+## 10.4 RankIC 汇总
+
+```python
+rank_ic_mean = rank_ic.mean()
+rank_ic_std = rank_ic.std(ddof=1)
+
+rank_ic_ir = (
+    rank_ic_mean / rank_ic_std
+    if rank_ic_std > 1e-12
+    else np.nan
+)
+
+rank_ic_positive_rate = (
+    rank_ic > 0
+).mean()
+
+print("RankIC 均值:", rank_ic_mean)
+print("RankIC 标准差:", rank_ic_std)
+print("简化 ICIR:", rank_ic_ir)
+print("正 RankIC 比例:", rank_ic_positive_rate)
+```
+
+进入严格研究阶段后，应使用 Newey--West/HAC 标准误处理时间相关性 [@neweywest1987]。
+
+## 10.5 绘制 RankIC
+
+```python
+import matplotlib.pyplot as plt
+
+ax = rank_ic.plot(
+    figsize=(11, 4),
+    title="Daily RankIC",
+)
+
+ax.axhline(
+    y=0.0,
+    linewidth=1.0,
+)
+ax.set_xlabel("Date")
+ax.set_ylabel("RankIC")
+ax.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig(
+    "outputs/rank_ic.png",
+    dpi=160,
+)
+plt.close()
+```
+
+## 10.6 五分组收益
+
+```python
+evaluation_data = panel.dropna(
+    subset=[
+        "factor_score",
+        "target_5d",
+    ]
+).copy()
+
+evaluation_data["quantile"] = (
+    evaluation_data
+    .groupby("date")["factor_score"]
+    .transform(
+        lambda s: pd.qcut(
+            s.rank(method="first"),
+            q=5,
+            labels=False,
+            duplicates="drop",
+        )
+    )
+)
+
+quantile_returns = (
+    evaluation_data
+    .groupby(
+        ["date", "quantile"]
+    )["target_5d"]
+    .mean()
+    .unstack("quantile")
+)
+
+print(quantile_returns.head())
+```
+
+平均分组收益：
+
+```python
+mean_quantile_returns = quantile_returns.mean()
+print(mean_quantile_returns)
+```
+
+## 10.7 检查单调性
+
+理想情况下，从低分组到高分组的未来收益具有大致单调趋势。但实际数据中可能：
+
+- 不单调；
+- 只有顶部有效；
+- 只有底部有效；
+- 不同年份方向相反；
+- 成本后消失。
+
+## 10.8 因子覆盖率
+
+```python
+factor_coverage = (
+    panel["factor_score"]
+    .notna()
+    .groupby(panel["date"])
+    .mean()
+    .rename("coverage")
+)
+
+print(factor_coverage.describe())
+```
+
+## 10.9 第 7 天练习
+
+1. 分别评价四个单因子；
+2. 比较 1 日和 5 日标签的 RankIC；
+3. 输出 RankIC 最差的 10 天；
+4. 绘制五分组累计收益；
+5. 检查因子覆盖率随时间是否下降。
+
+## 10.10 第 7 天验收
+
+你应能解释：
+
+- RankIC 与普通 Pearson 相关的区别；
+- RankIC 均值正但组合不赚钱的可能原因；
+- 分组收益为何要按日期分组；
+- 因子覆盖率为什么是必须报告的指标。
+
+# 十一、第 8 天：从因子分数到组合权重
+
+## 11.1 Top-20% 组合规则
+
+每日：
+
+1. 使用滞后一日信号；
+2. 对可交易股票排序；
+3. 选择最高的 20%；
+4. 入选股票等权；
+5. 其他股票权重为 0。
+
+## 11.2 构建可回测数据
+
+```python
+backtest_data = panel.dropna(
+    subset=[
+        "signal_lag1",
+        "target_1d",
+    ]
+).copy()
+
+if "is_tradable" in backtest_data.columns:
+    backtest_data = backtest_data[
+        backtest_data["is_tradable"]
+    ].copy()
+```
+
+## 11.3 每日百分位排名
+
+```python
+backtest_data["signal_percentile"] = (
+    backtest_data
+    .groupby("date")["signal_lag1"]
+    .rank(
+        pct=True,
+        method="first",
+    )
+)
+```
+
+## 11.4 选中最高 20%
+
+```python
+top_fraction = 0.20
+
+backtest_data["selected"] = (
+    backtest_data["signal_percentile"]
+    >= 1.0 - top_fraction
+)
+```
+
+## 11.5 等权
+
+```python
+selected_count = (
+    backtest_data
+    .groupby("date")["selected"]
+    .transform("sum")
+)
+
+if (selected_count <= 0).any():
+    raise RuntimeError(
+        "存在没有选中股票的交易日。"
+    )
+
+backtest_data["weight"] = np.where(
+    backtest_data["selected"],
+    1.0 / selected_count,
+    0.0,
+)
+```
+
+检查每日权重和：
+
+```python
+daily_weight_sum = (
+    backtest_data
+    .groupby("date")["weight"]
+    .sum()
+)
+
+print(daily_weight_sum.describe())
+```
+
+应接近 1。
+
+## 11.6 组合毛收益
+
+```python
+backtest_data["weighted_return"] = (
+    backtest_data["weight"]
+    * backtest_data["target_1d"]
+)
+
+gross_return = (
+    backtest_data
+    .groupby("date")["weighted_return"]
+    .sum()
+    .rename("gross_return")
+)
+```
+
+## 11.7 等权市场基准
+
+```python
+benchmark_return = (
+    backtest_data
+    .groupby("date")["target_1d"]
+    .mean()
+    .rename("benchmark_return")
+)
+```
+
+## 11.8 权重矩阵
+
+```python
+weight_matrix = (
+    backtest_data
+    .pivot(
+        index="date",
+        columns="ticker",
+        values="weight",
+    )
+    .fillna(0.0)
+    .sort_index()
+)
+```
+
+## 11.9 基础持仓约束
+
+单只股票最大权重：
+
+```python
+max_weight = 0.05
+
+if (
+    backtest_data["weight"] > max_weight
+).any():
+    print(
+        "警告：部分股票权重超过上限。"
+    )
+```
+
+在 20 只以上股票时，等权通常低于 5%；股票池太小时可能超限。
+
+## 11.10 调仓频率
+
+每日调仓会产生较高换手。可构造每 5 日调仓：
+
+```python
+unique_dates = sorted(
+    backtest_data["date"].unique()
+)
+
+rebalance_dates = set(unique_dates[::5])
+
+backtest_data["is_rebalance_date"] = (
+    backtest_data["date"]
+    .isin(rebalance_dates)
+)
+```
+
+完整的持仓延续需要将上次权重向后填充。第一阶段主实验先使用每日调仓，重点理解流程。
+
+## 11.11 第 8 天练习
+
+1. 比较 Top-10%、Top-20% 和 Top-30%；
+2. 检查每日持仓数量；
+3. 检查每日权重和；
+4. 输出某一天的持仓表；
+5. 实现每周调仓版本。
+
+## 11.12 第 8 天验收
+
+你应能解释：
+
+- 股票得分如何转化为权重；
+- Top-20% 为什么不是固定股票数量；
+- 等权组合有什么优缺点；
+- 调仓频率如何影响换手。
+
+# 十二、第 9 天：换手率、佣金、滑点和冲击成本
+
+## 12.1 简化单边换手率
+
+$$
+\operatorname{Turnover}_t
+=
+\frac{1}{2}
+\sum_i
+\left|
+w_{i,t}
+-
+w_{i,t-1}
+\right|
+$$
+
+```python
+turnover = (
+    weight_matrix
+    .diff()
+    .abs()
+    .sum(axis=1)
+    / 2.0
+)
+
+turnover.iloc[0] = (
+    weight_matrix
+    .iloc[0]
+    .abs()
+    .sum()
+    / 2.0
+)
+
+turnover = turnover.rename("turnover")
+```
+
+## 12.2 线性交易成本
+
+若单边综合成本率为 $c$：
+
+$$
+\operatorname{Cost}_t
+=
+c
+\cdot
+\operatorname{Turnover}_t
+$$
+
+```python
+cost_rate = 0.001
+
+cost = (
+    turnover * cost_rate
+).rename("cost")
+```
+
+## 12.3 成本后收益
+
+```python
+result = pd.concat(
+    [
+        gross_return,
+        benchmark_return,
+        turnover,
+        cost,
+    ],
+    axis=1,
+).dropna()
+
+result["net_return"] = (
+    result["gross_return"]
+    - result["cost"]
+)
+
+result["excess_net_return"] = (
+    result["net_return"]
+    - result["benchmark_return"]
+)
+```
+
+## 12.4 成本敏感性
+
+```python
+cost_rates = [
+    0.0000,
+    0.0005,
+    0.0010,
+    0.0020,
+    0.0030,
+]
+
+sensitivity_rows = []
+
+for rate in cost_rates:
+    net_return = (
+        result["gross_return"]
+        - result["turnover"] * rate
+    )
+
+    sensitivity_rows.append({
+        "cost_rate": rate,
+        "mean_daily_return": net_return.mean(),
+        "cumulative_return": (
+            (1.0 + net_return).prod() - 1.0
+        ),
+    })
+
+cost_sensitivity = pd.DataFrame(
+    sensitivity_rows
+)
+
+print(cost_sensitivity)
+```
+
+## 12.5 更细的成本拆分
+
+```python
+commission_rate = 0.0003
+slippage_rate = 0.0005
+tax_rate = 0.0002
+
+total_rate = (
+    commission_rate
+    + slippage_rate
+    + tax_rate
+)
+
+result["detailed_cost"] = (
+    result["turnover"] * total_rate
+)
+```
+
+真实市场中，不同方向和市场的费用可能不同。本阶段使用统一线性成本只是入门近似。
+
+## 12.6 简化冲击成本
+
+冲击通常随交易规模增加。入门近似：
+
+$$
+\operatorname{Impact}_t
+=
+\lambda
+\cdot
+\operatorname{Turnover}_t^2
+$$
+
+```python
+impact_coefficient = 0.001
+
+result["impact_cost"] = (
+    impact_coefficient
+    * result["turnover"] ** 2
+)
+
+result["net_return_with_impact"] = (
+    result["gross_return"]
+    - result["cost"]
+    - result["impact_cost"]
+)
+```
+
+## 12.7 第 9 天练习
+
+1. 比较 5、10、20、30 个基点成本；
+2. 计算平均换手率；
+3. 找出换手最高的 10 天；
+4. 比较每日和每周调仓成本；
+5. 解释为什么高 RankIC 因子可能因换手过高而不可交易。
+
+## 12.8 第 9 天验收
+
+你应能解释：
+
+- 换手率公式中的 $\frac{1}{2}$；
+- 毛收益与净收益的区别；
+- 滑点与佣金的区别；
+- 调仓频率为什么影响策略容量。
+
+# 十三、第 10 天：绩效指标和图表
+
+## 13.1 年化收益
+
+$$
+R_{\mathrm{ann}}
+=
+\left[
+\prod_{t=1}^{T}
+(1+r_t)
+\right]^{252/T}
+-
+1
+$$
+
+## 13.2 年化波动率
+
+$$
+\sigma_{\mathrm{ann}}
+=
+\operatorname{Std}(r_t)
+\sqrt{252}
+$$
+
+## 13.3 Sharpe 比率
+
+忽略无风险利率时：
+
+$$
+\operatorname{Sharpe}
+=
+\frac{\bar r}{\operatorname{Std}(r_t)}
+\sqrt{252}
+$$
+
+## 13.4 最大回撤
+
+净值：
+
+$$
+W_t
+=
+\prod_{\tau=1}^{t}
+(1+r_\tau)
+$$
+
+回撤：
+
+$$
+D_t
+=
+\frac{W_t}
+{\max_{\tau\leq t}W_\tau}
+-
+1
+$$
+
+最大回撤：
+
+$$
+\operatorname{MDD}
+=
+\min_t D_t
+$$
+
+## 13.5 完整绩效函数
+
+```python
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+
+
+def performance_metrics(
+    returns: pd.Series,
+    periods_per_year: int = 252,
+) -> dict:
+    r = pd.Series(returns).dropna()
+
+    if r.empty:
+        raise ValueError("收益序列为空。")
+
+    wealth = (1.0 + r).cumprod()
+    running_max = wealth.cummax()
+    drawdown = wealth / running_max - 1.0
+
+    annual_return = (
+        wealth.iloc[-1]
+        ** (periods_per_year / len(r))
+        - 1.0
+    )
+
+    annual_volatility = (
+        r.std(ddof=1)
+        * np.sqrt(periods_per_year)
+    )
+
+    if r.std(ddof=1) > 1e-12:
+        sharpe = (
+            r.mean()
+            / r.std(ddof=1)
+            * np.sqrt(periods_per_year)
+        )
+    else:
+        sharpe = np.nan
+
+    max_drawdown = drawdown.min()
+
+    if abs(max_drawdown) > 1e-12:
+        calmar = (
+            annual_return
+            / abs(max_drawdown)
+        )
+    else:
+        calmar = np.nan
+
+    return {
+        "sample_days": int(len(r)),
+        "annual_return": float(annual_return),
+        "annual_volatility": float(
+            annual_volatility
+        ),
+        "sharpe": float(sharpe),
+        "max_drawdown": float(max_drawdown),
+        "calmar": float(calmar),
+        "positive_day_rate": float(
+            (r > 0).mean()
+        ),
+    }
+```
+
+## 13.6 超额收益信息比率
+
+$$
+\operatorname{IR}
+=
+\frac{
+\operatorname{Mean}
+(r_t-r_t^{b})
+}{
+\operatorname{Std}
+(r_t-r_t^{b})
+}
+\sqrt{252}
+$$
+
+```python
+def information_ratio(
+    strategy_return: pd.Series,
+    benchmark_return: pd.Series,
+    periods_per_year: int = 252,
+) -> float:
+    aligned = pd.concat(
+        [
+            strategy_return.rename("strategy"),
+            benchmark_return.rename("benchmark"),
+        ],
+        axis=1,
+    ).dropna()
+
+    excess = (
+        aligned["strategy"]
+        - aligned["benchmark"]
+    )
+
+    std = excess.std(ddof=1)
+
+    if std < 1e-12:
+        return np.nan
+
+    return float(
+        excess.mean()
+        / std
+        * np.sqrt(periods_per_year)
+    )
+```
+
+## 13.7 累计净值图
+
+```python
+import matplotlib.pyplot as plt
+
+wealth = pd.DataFrame(
+    index=result.index
+)
+
+wealth["strategy_gross"] = (
+    1.0 + result["gross_return"]
+).cumprod()
+
+wealth["strategy_net"] = (
+    1.0 + result["net_return"]
+).cumprod()
+
+wealth["benchmark"] = (
+    1.0 + result["benchmark_return"]
+).cumprod()
+
+ax = wealth.plot(
+    figsize=(11, 5),
+    title="Strategy versus benchmark",
+)
+
+ax.set_xlabel("Date")
+ax.set_ylabel("Wealth")
+ax.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig(
+    "outputs/net_value.png",
+    dpi=160,
+)
+plt.close()
+```
+
+## 13.8 回撤图
+
+```python
+net_wealth = (
+    1.0 + result["net_return"]
+).cumprod()
+
+drawdown = (
+    net_wealth
+    / net_wealth.cummax()
+    - 1.0
+)
+
+ax = drawdown.plot(
+    figsize=(11, 4),
+    title="Strategy drawdown",
+)
+
+ax.set_xlabel("Date")
+ax.set_ylabel("Drawdown")
+ax.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig(
+    "outputs/drawdown.png",
+    dpi=160,
+)
+plt.close()
+```
+
+## 13.9 不要只报告一个指标
+
+必须联合解释：
+
+- 年化收益；
+- 年化波动率；
+- Sharpe；
+- 最大回撤；
+- 换手率；
+- RankIC；
+- 基准收益；
+- 成本敏感性；
+- 样本长度。
+
+## 13.10 第 10 天练习
+
+1. 计算毛收益和净收益的两组指标；
+2. 比较策略与基准最大回撤；
+3. 输出最大回撤发生日期；
+4. 计算信息比率；
+5. 检查成本增加后 Sharpe 如何变化。
+
+## 13.11 第 10 天验收
+
+你应能解释：
+
+- 年化收益为何不是日均收益乘 252；
+- Sharpe 高是否一定意味着策略可靠；
+- 最大回撤为何与波动率不同；
+- 样本过短为什么会夸大指标。
+
+# 十四、第 11 天：回测偏差与交易约束
+
+## 14.1 前视偏差
+
+常见形式：
+
+- 当日收盘后生成信号，却按同一收盘价成交；
+- 使用未来收益选择因子；
+- 使用未来行业分类；
+- 用全样本均值标准化；
+- 财报按报告期末日期对齐，而非披露日期；
+- 用修订后的数据回测历史。
+
+检查：
+
+```python
+assert "target_5d" not in feature_columns
+assert "target_1d" not in feature_columns
+```
+
+## 14.2 幸存者偏差
+
+只使用今天仍上市的股票回测历史，会排除：
+
+- 已退市股票；
+- 长期表现差的股票；
+- 被收购或合并股票；
+- 破产股票。
+
+正确做法是使用历史时点股票池，并保留退市收益和退出事件。
+
+## 14.3 数据窥探
+
+测试大量窗口和权重，最后只报告最好结果，会高估真实表现 [@lo1990]。
+
+模型或规则数量增加时，还应考虑多重检验和 Reality Check [@white2000]。
+
+建议建立实验日志：
+
+```text
+experiment_id,change,reason,test_result
+001,baseline,first run,...
+002,momentum 20->60,economic hypothesis,...
+003,cost 10bp->20bp,sensitivity,...
+```
+
+## 14.4 股票池选择偏差
+
+例如先看完整历史表现，再选择“数据完整的股票”，可能无意间删除失败股票。
+
+股票池应在每个历史时点根据当时可得规则确定。
+
+## 14.5 复权和公司行为错误
+
+检查：
+
+- 拆股；
+- 合股；
+- 分红；
+- 配股；
+- 停牌；
+- 退市；
+- 股票代码变更。
+
+## 14.6 可交易性
+
+最少应考虑：
+
+```python
+tradable_mask = (
+    panel["is_tradable"]
+    & panel["volume"].gt(0)
+    & panel["close"].gt(0)
+)
+```
+
+真实市场还应考虑：
+
+- 涨跌停；
+- 开盘即封板；
+- 停牌；
+- 最小交易单位；
+- 成交量限制；
+- 冲击成本。
+
+## 14.7 容量约束
+
+组合交易金额不能无限大。可设置成交额比例上限：
+
+```python
+max_participation_rate = 0.05
+
+panel["max_trade_amount"] = (
+    panel["amount_proxy"]
+    * max_participation_rate
+)
+```
+
+本阶段不计算真实资金规模，但必须理解策略容量。
+
+## 14.8 偏差审计表
+
+| 检查项 | 是否通过 | 证据 |
+|---|---|---|
+| 信号至少滞后一天 |  | 代码行或字段 |
+| 标签未进入特征 |  | 特征列表 |
+| 按日期标准化 |  | `groupby("date")` |
+| 股票池为历史时点股票池 |  | 数据说明 |
+| 使用一致复权口径 |  | 数据字典 |
+| 交易成本非零 |  | 成本参数 |
+| 停牌和不可交易状态处理 |  | 过滤规则 |
+| 测试集未参与调参 |  | 时间区间 |
+| 报告所有尝试 |  | 实验日志 |
+
+## 14.9 第 11 天练习
+
+1. 在代码中故意制造前视偏差；
+2. 比较滞后和不滞后结果；
+3. 编写特征白名单；
+4. 编写不可交易过滤；
+5. 写一段说明：为什么高收益不等于可信。
+
+## 14.10 第 11 天验收
+
+你应能指出至少五种会虚高回测表现的问题，并说明如何检测。
+
+# 十五、第 12 天：时间切分与滚动验证
+
+## 15.1 为什么不能随机切分
+
+错误：
+
+```python
+from sklearn.model_selection import train_test_split
+
+train, test = train_test_split(
+    panel,
+    test_size=0.20,
+    random_state=42,
+)
+```
+
+随机切分会将未来日期放入训练集，破坏时间因果顺序。
+
+## 15.2 固定时间切分
+
+```python
+all_dates = np.array(
+    sorted(panel["date"].unique())
+)
+
+n_dates = len(all_dates)
+
+train_end = all_dates[
+    int(n_dates * 0.60)
+]
+
+valid_end = all_dates[
+    int(n_dates * 0.80)
+]
+
+train = panel[
+    panel["date"] < train_end
+].copy()
+
+valid = panel[
+    (panel["date"] >= train_end)
+    & (panel["date"] < valid_end)
+].copy()
+
+test = panel[
+    panel["date"] >= valid_end
+].copy()
+```
+
+## 15.3 检查时间无重叠
+
+```python
+assert train["date"].max() < valid["date"].min()
+assert valid["date"].max() < test["date"].min()
+```
+
+## 15.4 参数选择纪律
+
+允许：
+
+- 在训练集构造规则；
+- 在验证集选择一个参数；
+- 最后一次在测试集报告。
+
+不允许：
+
+- 反复查看测试集；
+- 根据测试结果修改因子；
+- 只报告测试集最优窗口。
+
+## 15.5 滚动验证概念
+
+示例：
+
+| 轮次 | 训练期 | 验证期 | 测试期 |
+|---|---|---|---|
+| 1 | 2020--2021 | 2022H1 | 2022H2 |
+| 2 | 2020--2022H1 | 2022H2 | 2023H1 |
+| 3 | 2020--2022H2 | 2023H1 | 2023H2 |
+
+## 15.6 生成滚动区间
+
+```python
+def rolling_date_splits(
+    dates,
+    train_size: int,
+    valid_size: int,
+    test_size: int,
+    step_size: int,
+):
+    dates = np.array(sorted(dates))
+    splits = []
+
+    start = 0
+
+    while True:
+        train_start = start
+        train_end = train_start + train_size
+
+        valid_end = train_end + valid_size
+        test_end = valid_end + test_size
+
+        if test_end > len(dates):
+            break
+
+        split = {
+            "train": dates[
+                train_start:train_end
+            ],
+            "valid": dates[
+                train_end:valid_end
+            ],
+            "test": dates[
+                valid_end:test_end
+            ],
+        }
+
+        splits.append(split)
+        start += step_size
+
+    return splits
+```
+
+## 15.7 第 12 天练习
+
+1. 完成 60/20/20 时间切分；
+2. 输出每个区间起止日期；
+3. 构造两个滚动测试窗口；
+4. 保证测试期无重叠；
+5. 写下哪些参数可以在验证集选择。
+
+## 15.8 第 12 天验收
+
+你应能解释：
+
+- 为什么随机切分错误；
+- 验证集和测试集的区别；
+- 为什么测试集只能最后查看；
+- 滚动验证为何更接近真实研究。
+
+# 十六、第 13 天：完整模块化回测程序
+
+这一日将前面代码组合为一个脚本。推荐文件：
+
+```text
+src/phase1_cross_sectional_backtest.py
+```
+
+## 16.1 配置参数
+
+```python
+from pathlib import Path
+
+DATA_PATH = Path("data/prices.csv")
+OUTPUT_DIR = Path("outputs")
+
+TOP_FRACTION = 0.20
+COST_RATE = 0.001
+SEED = 42
+```
+
+## 16.2 主流程
+
+完整流程应严格按以下顺序：
+
+```text
+读取或生成数据
+→ 数据审计
+→ 构造历史收益
+→ 构造原始因子
+→ 按日去极值
+→ 按日标准化
+→ 构造未来收益标签
+→ 生成综合分数
+→ 信号滞后一天
+→ 计算 RankIC
+→ 构造 Top-20% 权重
+→ 计算毛收益
+→ 计算换手和成本
+→ 计算净收益
+→ 计算绩效
+→ 保存表格和图像
+```
+
+## 16.3 输出文件要求
+
+```text
+outputs/
+├── audit.json
+├── factor_summary.csv
+├── feature_missing_rates.csv
+├── rank_ic.csv
+├── quantile_returns.csv
+├── daily_backtest.csv
+├── cost_sensitivity.csv
+├── metrics.json
+├── rank_ic.png
+├── net_value.png
+└── drawdown.png
+```
+
+## 16.4 运行命令
+
+```bash
+python src/phase1_cross_sectional_backtest.py
+```
+
+## 16.5 运行前检查
+
+```python
+def preflight_checks(
+    feature_columns: list[str],
+    target_columns: list[str],
+) -> None:
+    overlap = (
+        set(feature_columns)
+        & set(target_columns)
+    )
+
+    if overlap:
+        raise ValueError(
+            "未来标签进入特征："
+            f"{sorted(overlap)}"
+        )
+
+    if not 0.0 < TOP_FRACTION < 1.0:
+        raise ValueError(
+            "TOP_FRACTION 必须位于 (0, 1)。"
+        )
+
+    if COST_RATE < 0:
+        raise ValueError(
+            "交易成本不能为负。"
+        )
+```
+
+## 16.6 运行后检查
+
+```python
+assert result.index.is_monotonic_increasing
+assert result["turnover"].ge(0).all()
+assert np.isfinite(
+    result[
+        [
+            "gross_return",
+            "net_return",
+            "benchmark_return",
+        ]
+    ].to_numpy()
+).all()
+```
+
+## 16.7 第 13 天验收
+
+完整程序必须：
+
+- 从空的 `outputs` 目录开始运行；
+- 不依赖手工修改中间文件；
+- 能使用模拟数据；
+- 能切换到真实 CSV；
+- 报错信息可读；
+- 输出结果文件；
+- 固定随机种子；
+- 不把标签放入特征。
+
+# 十七、第 14 天：写实验报告与最终验收
+
+## 17.1 报告结构
+
+### 研究问题
+
+例：
+
+> 由动量、短期反转、低波动和流动性构成的简单横截面综合分数，能否在成本后优于等权股票池基准？
+
+### 数据
+
+报告：
+
+- 市场；
+- 时间区间；
+- 股票数量；
+- 交易日数量；
+- 复权方式；
+- 股票池定义；
+- 缺失数据；
+- 可交易性规则。
+
+### 因子
+
+说明：
+
+- 因子公式；
+- 窗口；
+- 方向；
+- 去极值；
+- 标准化；
+- 综合权重。
+
+### 回测
+
+说明：
+
+- 信号生成时点；
+- 信号滞后；
+- 调仓频率；
+- 持仓比例；
+- 权重方式；
+- 成本假设；
+- 基准。
+
+### 结果
+
+至少报告：
+
+- RankIC；
+- ICIR；
+- 五分组收益；
+- 年化收益；
+- 年化波动率；
+- Sharpe；
+- 最大回撤；
+- 平均换手；
+- 成本敏感性；
+- 与基准比较。
+
+### 局限
+
+必须主动说明：
+
+- 模拟数据或数据源局限；
+- 交易成本简化；
+- 冲击成本简化；
+- 股票池偏差；
+- 样本期长度；
+- 参数尝试数量；
+- 结果不能视为投资建议。
+
+## 17.2 结果失败时怎样解释
+
+策略失败并不意味着阶段失败。可从以下方向分析：
+
+1. 因子 RankIC 接近 0；
+2. RankIC 不稳定；
+3. 分组收益不单调；
+4. 组合过于集中；
+5. 换手率太高；
+6. 成本侵蚀全部毛收益；
+7. 因子在不同年份方向不同；
+8. 股票池或复权定义有误；
+9. 样本太短；
+10. 参数选择存在过拟合。
+
+## 17.3 最终验收问题
+
+你必须能够不用查资料回答：
+
+1. `pct_change(20)` 的经济含义是什么？
+2. `shift(-5)` 为什么只用于标签？
+3. 为什么收盘因子要滞后后再交易？
+4. 为什么标准化要按日期？
+5. RankIC 和组合收益有什么区别？
+6. 为什么换手率会降低净收益？
+7. 为什么随机切分不适用于金融时间序列？
+8. 幸存者偏差如何产生？
+9. 毛收益与净收益差在哪里？
+10. 最大回撤如何计算？
+11. 为什么高 Sharpe 可能不可靠？
+12. 测试集为何不能反复查看？
+
+::: {.callout-tip}
+## 进入下一阶段的条件
+
+只有当你能独立运行本阶段程序、解释全部字段、检查信息时点，并对失败结果做出合理诊断后，才进入 Qlib、机器学习因子或大模型文本因子阶段。
+:::
+
+# 十八、最终作业说明
+
+## 18.1 作业题目
+
+**基于动量、短期反转、波动率与流动性的横截面 Top-20% 选股回测**
+
+## 18.2 强制设定
+
+- 只使用日频价格和成交量；
+- 不使用机器学习；
+- 不使用大模型；
+- 因子按交易日横截面处理；
+- 信号至少滞后 1 日；
+- 选择最高 20% 股票；
+- 入选股票等权；
+- 显式计算换手；
+- 显式扣除交易成本；
+- 使用等权股票池基准；
+- 禁止随机切分；
+- 报告全部主要尝试。
+
+## 18.3 必须提交的文件
+
+```text
+phase1_quant_basics/
+├── data/
+│   └── prices.csv
+├── src/
+│   └── phase1_cross_sectional_backtest.py
+├── outputs/
+│   ├── audit.json
+│   ├── factor_summary.csv
+│   ├── feature_missing_rates.csv
+│   ├── rank_ic.csv
+│   ├── quantile_returns.csv
+│   ├── daily_backtest.csv
+│   ├── cost_sensitivity.csv
+│   ├── metrics.json
+│   ├── rank_ic.png
+│   ├── net_value.png
+│   └── drawdown.png
+├── requirements.txt
+└── report.md
+```
+
+## 18.4 必须回答的问题
+
+1. 使用了什么股票池？
+2. 数据是否包含退市股票？
+3. 使用什么复权价格？
+4. 信号何时生成？
+5. 假设何时成交？
+6. 因子如何标准化？
+7. RankIC 是否稳定？
+8. 成本前和成本后有何差异？
+9. 哪个参数最敏感？
+10. 结果最可能受哪种偏差影响？
+
+# 十九、完整可运行脚本
+
+下面脚本可以直接保存为：
+
+```text
+src/phase1_cross_sectional_backtest.py
+```
+
+```python
+"""
+第一阶段完整示例：
+传统横截面因子 Top-20% 等权回测。
+
+真实 CSV 最少包含：
+date,ticker,close,volume
+
+本脚本用于学习研究流程，不构成投资建议。
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+
+DATA_PATH = Path("data/prices.csv")
+OUTPUT_DIR = Path("outputs")
+
+TOP_FRACTION = 0.20
+COST_RATE = 0.001
+SEED = 42
+
+
+def make_demo_panel(
+    n_stocks: int = 80,
+    n_days: int = 420,
+    seed: int = SEED,
+) -> pd.DataFrame:
+    """生成不依赖网络的模拟股票面板。"""
+    rng = np.random.default_rng(seed)
+
+    dates = pd.bdate_range(
+        start="2023-01-02",
+        periods=n_days,
+    )
+    tickers = [
+        f"S{i:03d}"
+        for i in range(n_stocks)
+    ]
+    sectors = [
+        f"Sector_{i}"
+        for i in range(8)
+    ]
+
+    market_return = rng.normal(
+        loc=0.0002,
+        scale=0.009,
+        size=n_days,
+    )
+
+    frames: list[pd.DataFrame] = []
+
+    for stock_id, ticker in enumerate(tickers):
+        beta = rng.uniform(0.7, 1.3)
+
+        idiosyncratic_return = rng.normal(
+            loc=0.0,
+            scale=rng.uniform(0.008, 0.018),
+            size=n_days,
+        )
+
+        stock_return = (
+            beta * market_return
+            + idiosyncratic_return
+        )
+
+        close = (
+            50.0
+            * np.exp(
+                np.cumsum(stock_return)
+            )
+        )
+
+        volume = rng.lognormal(
+            mean=14.0,
+            sigma=0.45,
+            size=n_days,
+        )
+
+        frames.append(
+            pd.DataFrame({
+                "date": dates,
+                "ticker": ticker,
+                "sector": sectors[
+                    stock_id % len(sectors)
+                ],
+                "close": close,
+                "volume": volume,
+                "is_tradable": True,
+            })
+        )
+
+    panel = pd.concat(
+        frames,
+        ignore_index=True,
+    )
+
+    return (
+        panel
+        .sort_values(["ticker", "date"])
+        .reset_index(drop=True)
+    )
+
+
+def load_panel(
+    path: Path,
+) -> pd.DataFrame:
+    """读取真实数据；若不存在则生成模拟数据。"""
+    if path.exists():
+        panel = pd.read_csv(
+            path,
+            parse_dates=["date"],
+            dtype={"ticker": str},
+        )
+        print(f"读取真实数据：{path}")
+    else:
+        panel = make_demo_panel()
+        print(
+            "未发现 data/prices.csv，"
+            "使用模拟数据。"
+        )
+
+    return (
+        panel
+        .sort_values(["ticker", "date"])
+        .reset_index(drop=True)
+    )
+
+
+def audit_panel(
+    panel: pd.DataFrame,
+) -> dict:
+    """执行基础数据审计。"""
+    required = {
+        "date",
+        "ticker",
+        "close",
+        "volume",
+    }
+
+    missing = required - set(panel.columns)
+
+    if missing:
+        raise ValueError(
+            f"缺少字段：{sorted(missing)}"
+        )
+
+    if panel.empty:
+        raise ValueError("数据为空。")
+
+    if panel.duplicated(
+        ["date", "ticker"]
+    ).any():
+        raise ValueError(
+            "存在重复 date-ticker。"
+        )
+
+    if panel[
+        ["date", "ticker", "close"]
+    ].isna().any().any():
+        raise ValueError(
+            "关键字段存在缺失。"
+        )
+
+    if (panel["close"] <= 0).any():
+        raise ValueError(
+            "存在非正价格。"
+        )
+
+    if (panel["volume"] < 0).any():
+        raise ValueError(
+            "存在负成交量。"
+        )
+
+    coverage = (
+        panel
+        .groupby("date")["ticker"]
+        .nunique()
+    )
+
+    return {
+        "rows": int(len(panel)),
+        "stocks": int(
+            panel["ticker"].nunique()
+        ),
+        "trading_days": int(
+            panel["date"].nunique()
+        ),
+        "start_date": str(
+            panel["date"].min().date()
+        ),
+        "end_date": str(
+            panel["date"].max().date()
+        ),
+        "min_stocks_per_day": int(
+            coverage.min()
+        ),
+        "median_stocks_per_day": float(
+            coverage.median()
+        ),
+        "max_stocks_per_day": int(
+            coverage.max()
+        ),
+    }
+
+
+def cross_sectional_winsorize(
+    series: pd.Series,
+    lower: float = 0.01,
+    upper: float = 0.99,
+) -> pd.Series:
+    """按交易日横截面分位数去极值。"""
+    if series.notna().sum() < 5:
+        return series
+
+    lower_value = series.quantile(lower)
+    upper_value = series.quantile(upper)
+
+    return series.clip(
+        lower=lower_value,
+        upper=upper_value,
+    )
+
+
+def cross_sectional_zscore(
+    series: pd.Series,
+) -> pd.Series:
+    """按交易日横截面标准化。"""
+    std = series.std(ddof=0)
+
+    if pd.isna(std) or std < 1e-12:
+        return pd.Series(
+            np.nan,
+            index=series.index,
+        )
+
+    return (
+        series - series.mean()
+    ) / std
+
+
+def build_features(
+    panel: pd.DataFrame,
+) -> pd.DataFrame:
+    """构造因子、标签和滞后信号。"""
+    data = (
+        panel
+        .copy()
+        .sort_values(["ticker", "date"])
+    )
+
+    data["ret_1d"] = (
+        data
+        .groupby("ticker")["close"]
+        .pct_change()
+    )
+
+    data["mom_20"] = (
+        data
+        .groupby("ticker")["close"]
+        .pct_change(20)
+    )
+
+    data["reversal_5"] = -(
+        data
+        .groupby("ticker")["close"]
+        .pct_change(5)
+    )
+
+    data["vol_20"] = (
+        data
+        .groupby("ticker")["ret_1d"]
+        .transform(
+            lambda s: s.rolling(
+                window=20,
+                min_periods=20,
+            ).std()
+        )
+    )
+
+    data["amount_proxy"] = (
+        data["close"]
+        * data["volume"]
+    )
+
+    data["liquidity"] = np.log1p(
+        data["amount_proxy"]
+    )
+
+    data["target_1d"] = (
+        data
+        .groupby("ticker")["close"]
+        .shift(-1)
+        / data["close"]
+        - 1.0
+    )
+
+    data["target_5d"] = (
+        data
+        .groupby("ticker")["close"]
+        .shift(-5)
+        / data["close"]
+        - 1.0
+    )
+
+    raw_factors = [
+        "mom_20",
+        "reversal_5",
+        "vol_20",
+        "liquidity",
+    ]
+
+    for factor in raw_factors:
+        winsorized = f"{factor}_w"
+        standardized = f"{factor}_z"
+
+        data[winsorized] = (
+            data
+            .groupby("date")[factor]
+            .transform(
+                cross_sectional_winsorize
+            )
+        )
+
+        data[standardized] = (
+            data
+            .groupby("date")[winsorized]
+            .transform(
+                cross_sectional_zscore
+            )
+        )
+
+    data["factor_score"] = (
+        0.50 * data["mom_20_z"]
+        + 0.25 * data["reversal_5_z"]
+        - 0.20 * data["vol_20_z"]
+        + 0.05 * data["liquidity_z"]
+    )
+
+    data["signal_lag1"] = (
+        data
+        .groupby("ticker")["factor_score"]
+        .shift(1)
+    )
+
+    return data
+
+
+def one_day_rank_ic(
+    group: pd.DataFrame,
+) -> float:
+    """计算单日 Spearman RankIC。"""
+    valid = group[
+        ["factor_score", "target_5d"]
+    ].dropna()
+
+    if len(valid) < 10:
+        return np.nan
+
+    if valid["factor_score"].nunique() < 2:
+        return np.nan
+
+    if valid["target_5d"].nunique() < 2:
+        return np.nan
+
+    ranked = valid.rank(method="average")
+
+    return float(
+        ranked["factor_score"].corr(
+            ranked["target_5d"]
+        )
+    )
+
+
+def calculate_rank_ic(
+    data: pd.DataFrame,
+) -> pd.Series:
+    """生成日度 RankIC 序列。"""
+    return (
+        data
+        .groupby("date")[
+            ["factor_score", "target_5d"]
+        ]
+        .apply(one_day_rank_ic)
+        .dropna()
+        .rename("rank_ic")
+    )
+
+
+def calculate_quantile_returns(
+    data: pd.DataFrame,
+    n_quantiles: int = 5,
+) -> pd.DataFrame:
+    """计算每日因子分组未来收益。"""
+    evaluation = data.dropna(
+        subset=[
+            "factor_score",
+            "target_5d",
+        ]
+    ).copy()
+
+    evaluation["quantile"] = (
+        evaluation
+        .groupby("date")["factor_score"]
+        .transform(
+            lambda s: pd.qcut(
+                s.rank(method="first"),
+                q=n_quantiles,
+                labels=False,
+                duplicates="drop",
+            )
+        )
+    )
+
+    return (
+        evaluation
+        .groupby(
+            ["date", "quantile"]
+        )["target_5d"]
+        .mean()
+        .unstack("quantile")
+    )
+
+
+def build_portfolio(
+    data: pd.DataFrame,
+    top_fraction: float = TOP_FRACTION,
+    cost_rate: float = COST_RATE,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """构造 Top 分位数等权组合。"""
+    if not 0.0 < top_fraction < 1.0:
+        raise ValueError(
+            "top_fraction 必须位于 (0, 1)。"
+        )
+
+    backtest = data.dropna(
+        subset=[
+            "signal_lag1",
+            "target_1d",
+        ]
+    ).copy()
+
+    if "is_tradable" in backtest.columns:
+        backtest = backtest[
+            backtest["is_tradable"]
+        ].copy()
+
+    backtest["signal_percentile"] = (
+        backtest
+        .groupby("date")["signal_lag1"]
+        .rank(
+            pct=True,
+            method="first",
+        )
+    )
+
+    backtest["selected"] = (
+        backtest["signal_percentile"]
+        >= 1.0 - top_fraction
+    )
+
+    selected_count = (
+        backtest
+        .groupby("date")["selected"]
+        .transform("sum")
+    )
+
+    if (selected_count <= 0).any():
+        raise RuntimeError(
+            "存在无选中股票的日期。"
+        )
+
+    backtest["weight"] = np.where(
+        backtest["selected"],
+        1.0 / selected_count,
+        0.0,
+    )
+
+    backtest["weighted_return"] = (
+        backtest["weight"]
+        * backtest["target_1d"]
+    )
+
+    gross_return = (
+        backtest
+        .groupby("date")["weighted_return"]
+        .sum()
+        .rename("gross_return")
+    )
+
+    benchmark_return = (
+        backtest
+        .groupby("date")["target_1d"]
+        .mean()
+        .rename("benchmark_return")
+    )
+
+    weight_matrix = (
+        backtest
+        .pivot(
+            index="date",
+            columns="ticker",
+            values="weight",
+        )
+        .fillna(0.0)
+        .sort_index()
+    )
+
+    turnover = (
+        weight_matrix
+        .diff()
+        .abs()
+        .sum(axis=1)
+        / 2.0
+    )
+
+    turnover.iloc[0] = (
+        weight_matrix
+        .iloc[0]
+        .abs()
+        .sum()
+        / 2.0
+    )
+
+    turnover = turnover.rename("turnover")
+
+    result = pd.concat(
+        [
+            gross_return,
+            benchmark_return,
+            turnover,
+        ],
+        axis=1,
+    ).dropna()
+
+    result["cost"] = (
+        result["turnover"]
+        * cost_rate
+    )
+
+    result["net_return"] = (
+        result["gross_return"]
+        - result["cost"]
+    )
+
+    result["excess_net_return"] = (
+        result["net_return"]
+        - result["benchmark_return"]
+    )
+
+    return result, backtest
+
+
+def performance_metrics(
+    returns: pd.Series,
+    periods_per_year: int = 252,
+) -> dict:
+    """计算基本绩效指标。"""
+    r = pd.Series(returns).dropna()
+
+    if r.empty:
+        raise ValueError("收益序列为空。")
+
+    wealth = (1.0 + r).cumprod()
+    drawdown = (
+        wealth / wealth.cummax() - 1.0
+    )
+
+    annual_return = (
+        wealth.iloc[-1]
+        ** (periods_per_year / len(r))
+        - 1.0
+    )
+
+    std = r.std(ddof=1)
+
+    annual_volatility = (
+        std * np.sqrt(periods_per_year)
+    )
+
+    sharpe = (
+        r.mean()
+        / std
+        * np.sqrt(periods_per_year)
+        if std > 1e-12
+        else np.nan
+    )
+
+    max_drawdown = drawdown.min()
+
+    calmar = (
+        annual_return
+        / abs(max_drawdown)
+        if abs(max_drawdown) > 1e-12
+        else np.nan
+    )
+
+    return {
+        "sample_days": int(len(r)),
+        "annual_return": float(annual_return),
+        "annual_volatility": float(
+            annual_volatility
+        ),
+        "sharpe": float(sharpe),
+        "max_drawdown": float(max_drawdown),
+        "calmar": float(calmar),
+        "positive_day_rate": float(
+            (r > 0).mean()
+        ),
+    }
+
+
+def calculate_cost_sensitivity(
+    result: pd.DataFrame,
+    cost_rates: list[float],
+) -> pd.DataFrame:
+    """测试不同成本率下的绩效。"""
+    rows = []
+
+    for rate in cost_rates:
+        net_return = (
+            result["gross_return"]
+            - result["turnover"] * rate
+        )
+
+        metrics = performance_metrics(
+            net_return
+        )
+        metrics["cost_rate"] = rate
+        rows.append(metrics)
+
+    return pd.DataFrame(rows)
+
+
+def save_plots(
+    result: pd.DataFrame,
+    rank_ic: pd.Series,
+) -> None:
+    """保存净值、回撤和 RankIC 图。"""
+    wealth = pd.DataFrame(
+        index=result.index
+    )
+
+    wealth["strategy_gross"] = (
+        1.0 + result["gross_return"]
+    ).cumprod()
+
+    wealth["strategy_net"] = (
+        1.0 + result["net_return"]
+    ).cumprod()
+
+    wealth["benchmark"] = (
+        1.0 + result["benchmark_return"]
+    ).cumprod()
+
+    ax = wealth.plot(
+        figsize=(11, 5),
+        title="Strategy versus benchmark",
+    )
+
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Wealth")
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(
+        OUTPUT_DIR / "net_value.png",
+        dpi=160,
+    )
+    plt.close()
+
+    drawdown = (
+        wealth["strategy_net"]
+        / wealth["strategy_net"].cummax()
+        - 1.0
+    )
+
+    ax = drawdown.plot(
+        figsize=(11, 4),
+        title="Strategy drawdown",
+    )
+
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Drawdown")
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(
+        OUTPUT_DIR / "drawdown.png",
+        dpi=160,
+    )
+    plt.close()
+
+    ax = rank_ic.plot(
+        figsize=(11, 4),
+        title="Daily RankIC",
+    )
+
+    ax.axhline(
+        y=0.0,
+        linewidth=1.0,
+    )
+    ax.set_xlabel("Date")
+    ax.set_ylabel("RankIC")
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(
+        OUTPUT_DIR / "rank_ic.png",
+        dpi=160,
+    )
+    plt.close()
+
+
+def main() -> None:
+    OUTPUT_DIR.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    panel = load_panel(DATA_PATH)
+    audit = audit_panel(panel)
+
+    data = build_features(panel)
+
+    feature_columns = [
+        "mom_20_z",
+        "reversal_5_z",
+        "vol_20_z",
+        "liquidity_z",
+    ]
+
+    target_columns = [
+        "target_1d",
+        "target_5d",
+    ]
+
+    overlap = (
+        set(feature_columns)
+        & set(target_columns)
+    )
+
+    if overlap:
+        raise ValueError(
+            "标签进入特征："
+            f"{sorted(overlap)}"
+        )
+
+    raw_factors = [
+        "mom_20",
+        "reversal_5",
+        "vol_20",
+        "liquidity",
+    ]
+
+    factor_summary = (
+        data[raw_factors]
+        .describe(
+            percentiles=[
+                0.01,
+                0.05,
+                0.50,
+                0.95,
+                0.99,
+            ]
+        )
+        .T
+    )
+
+    missing_rates = (
+        data[raw_factors]
+        .isna()
+        .mean()
+        .rename("missing_rate")
+    )
+
+    rank_ic = calculate_rank_ic(data)
+
+    quantile_returns = (
+        calculate_quantile_returns(data)
+    )
+
+    result, positions = build_portfolio(
+        data=data,
+        top_fraction=TOP_FRACTION,
+        cost_rate=COST_RATE,
+    )
+
+    strategy_metrics = performance_metrics(
+        result["net_return"]
+    )
+
+    benchmark_metrics = performance_metrics(
+        result["benchmark_return"]
+    )
+
+    rank_ic_std = rank_ic.std(ddof=1)
+
+    metrics = {
+        "audit": audit,
+        "rank_ic_mean": float(
+            rank_ic.mean()
+        ),
+        "rank_ic_std": float(
+            rank_ic_std
+        ),
+        "rank_ic_ir_simple": float(
+            rank_ic.mean() / rank_ic_std
+        ) if rank_ic_std > 1e-12 else None,
+        "rank_ic_positive_rate": float(
+            (rank_ic > 0).mean()
+        ),
+        "average_turnover": float(
+            result["turnover"].mean()
+        ),
+        "strategy_net": strategy_metrics,
+        "benchmark": benchmark_metrics,
+    }
+
+    sensitivity = (
+        calculate_cost_sensitivity(
+            result=result,
+            cost_rates=[
+                0.0000,
+                0.0005,
+                0.0010,
+                0.0020,
+                0.0030,
+            ],
+        )
+    )
+
+    with open(
+        OUTPUT_DIR / "audit.json",
+        "w",
+        encoding="utf-8",
+    ) as file:
+        json.dump(
+            audit,
+            file,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    with open(
+        OUTPUT_DIR / "metrics.json",
+        "w",
+        encoding="utf-8",
+    ) as file:
+        json.dump(
+            metrics,
+            file,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    factor_summary.to_csv(
+        OUTPUT_DIR / "factor_summary.csv",
+        encoding="utf-8-sig",
+    )
+
+    missing_rates.to_csv(
+        OUTPUT_DIR
+        / "feature_missing_rates.csv",
+        encoding="utf-8-sig",
+    )
+
+    rank_ic.to_csv(
+        OUTPUT_DIR / "rank_ic.csv",
+        encoding="utf-8-sig",
+    )
+
+    quantile_returns.to_csv(
+        OUTPUT_DIR
+        / "quantile_returns.csv",
+        encoding="utf-8-sig",
+    )
+
+    result.to_csv(
+        OUTPUT_DIR
+        / "daily_backtest.csv",
+        encoding="utf-8-sig",
+    )
+
+    sensitivity.to_csv(
+        OUTPUT_DIR
+        / "cost_sensitivity.csv",
+        index=False,
+        encoding="utf-8-sig",
+    )
+
+    save_plots(
+        result=result,
+        rank_ic=rank_ic,
+    )
+
+    print("\n=== 数据审计 ===")
+    print(
+        json.dumps(
+            audit,
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+    print("\n=== 主要指标 ===")
+    print(
+        json.dumps(
+            metrics,
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+    print("\n=== 成本敏感性 ===")
+    print(
+        sensitivity.to_string(
+            index=False
+        )
+    )
+
+    print(
+        "\n结果目录："
+        f"{OUTPUT_DIR.resolve()}"
+    )
+
+
+if __name__ == "__main__":
+    main()
+```
+
+# 二十、常见错误与排查顺序
+
+## 20.1 `KeyError: 'date'`
+
+原因：CSV 列名不是 `date`。
+
+检查：
+
+```python
+print(panel.columns.tolist())
+```
+
+处理：
+
+```python
+panel = panel.rename(
+    columns={
+        "trade_date": "date",
+        "symbol": "ticker",
+    }
+)
+```
+
+## 20.2 股票代码前导零消失
+
+错误读取：
+
+```python
+pd.read_csv("data/prices.csv")
+```
+
+正确：
+
+```python
+pd.read_csv(
+    "data/prices.csv",
+    dtype={"ticker": str},
+)
+```
+
+## 20.3 全部 RankIC 是缺失
+
+检查：
+
+```python
+print(
+    panel[
+        [
+            "factor_score",
+            "target_5d",
+        ]
+    ].notna().mean()
+)
+```
+
+可能原因：
+
+- 窗口不足；
+- 股票数少于 10；
+- 标签构造错误；
+- 因子全为常数；
+- 数据日期顺序错误。
+
+## 20.4 每日权重和不为 1
+
+检查：
+
+```python
+print(
+    backtest_data
+    .groupby("date")["weight"]
+    .sum()
+    .describe()
+)
+```
+
+可能原因：
+
+- 选中股票数为 0；
+- 重复股票行；
+- 不可交易过滤在权重之后进行；
+- 权重计算的分母错误。
+
+## 20.5 净收益远低于毛收益
+
+检查：
+
+```python
+print(result["turnover"].describe())
+print(result["cost"].describe())
+```
+
+可能原因：
+
+- 每日选股变化太大；
+- 调仓过于频繁；
+- 成本率单位错误；
+- 将 10 个基点误写为 `0.01`。
+
+正确换算：
+
+```text
+1 bp   = 0.0001
+5 bp   = 0.0005
+10 bp  = 0.0010
+100 bp = 0.0100
+```
+
+## 20.6 收益曲线异常爆炸
+
+检查：
+
+- 收益是否用百分数还是小数；
+- `5` 是否错误表示 5%；
+- 价格是否有 0；
+- 复权是否一致；
+- 股票代码是否混合。
+
+5% 应写：
+
+```python
+0.05
+```
+
+不能写：
+
+```python
+5
+```
+
+## 20.7 图表中文乱码
+
+本示例图标题使用英文以避免环境字体问题。若需要中文，可设置系统已安装字体：
+
+```python
+import matplotlib.pyplot as plt
+
+plt.rcParams["font.sans-serif"] = [
+    "Microsoft YaHei",
+    "SimHei",
+]
+plt.rcParams["axes.unicode_minus"] = False
+```
+
+## 20.8 Quarto 编译正文时不应执行完整回测
+
+本文中的代码块使用：
+
+````text
+```python
+...
+```
+````
+
+它们用于展示，不会自动执行。
+
+若写成：
+
+````text
+```{python}
+...
+```
+````
+
+Quarto 会尝试执行代码。对教程正文，建议保持静态代码块，完整回测单独保存在 `src` 目录。
+
+# 二十一、最终检查清单
+
+## 数据
+
+- [ ] 股票代码为字符串；
+- [ ] 日期为日期类型；
+- [ ] 无重复 `date-ticker`；
+- [ ] 价格为正；
+- [ ] 成交量非负；
+- [ ] 复权口径已记录；
+- [ ] 股票池历史定义已记录；
+- [ ] 退市股票处理已说明。
+
+## 因子
+
+- [ ] 因子只使用当时可得数据；
+- [ ] 因子窗口定义明确；
+- [ ] 缺失值处理明确；
+- [ ] 去极值按日期；
+- [ ] 标准化按日期；
+- [ ] 因子方向明确；
+- [ ] 综合权重有解释。
+
+## 标签和时点
+
+- [ ] `shift(-h)` 只用于标签；
+- [ ] 标签没有进入特征；
+- [ ] 收盘信号至少滞后一天；
+- [ ] 财务数据使用披露日期；
+- [ ] 交易价格假设明确。
+
+## 组合
+
+- [ ] Top 比例明确；
+- [ ] 权重和接近 1；
+- [ ] 持仓数量已检查；
+- [ ] 不可交易股票已过滤；
+- [ ] 换手率已计算；
+- [ ] 成本率非零；
+- [ ] 基准明确。
+
+## 评价
+
+- [ ] RankIC；
+- [ ] ICIR；
+- [ ] RankIC 正值比例；
+- [ ] 因子覆盖率；
+- [ ] 五分组收益；
+- [ ] 年化收益；
+- [ ] 年化波动率；
+- [ ] Sharpe；
+- [ ] 最大回撤；
+- [ ] 平均换手；
+- [ ] 成本敏感性；
+- [ ] 基准比较。
+
+## 实验纪律
+
+- [ ] 不随机切分；
+- [ ] 验证集用于参数选择；
+- [ ] 测试集只最终查看；
+- [ ] 记录全部主要尝试；
+- [ ] 不只报告最好结果；
+- [ ] 失败结果也保留；
+- [ ] 固定随机种子；
+- [ ] 代码和数据版本可追踪。
+
+# 二十二、术语表
+
+| 术语 | 含义 |
+|---|---|
+| 横截面 | 同一时间比较多只股票 |
+| 时间序列 | 比较同一股票的不同时间 |
+| 因子 | 用于排序股票的数值特征 |
+| 标签 | 未来实现结果，例如未来收益 |
+| RankIC | 因子排序与未来收益排序的相关 |
+| ICIR | RankIC 均值相对其波动的比率 |
+| 股票池 | 某个历史时点允许研究或交易的股票集合 |
+| 复权 | 调整分红、拆股等公司行为对价格的影响 |
+| 换手率 | 组合权重变化的规模 |
+| 滑点 | 理论成交价与实际成交价的差异 |
+| 最大回撤 | 净值从历史高点到后续低点的最大跌幅 |
+| 前视偏差 | 使用交易时点尚不可得的未来信息 |
+| 幸存者偏差 | 历史回测只保留当前仍存续对象 |
+| 数据窥探 | 反复尝试后只报告最优结果 |
+| 样本外 | 未参与规则构造和参数选择的数据 |
+
+# 二十三、进入 Qlib 前的最后检查
+
+只有以下全部为“是”，才进入下一阶段：
+
+1. 我能独立解释数据每一列；
+2. 我能从价格构造历史收益和未来标签；
+3. 我能明确区分 `shift(1)` 与 `shift(-1)`；
+4. 我能按日期完成横截面标准化；
+5. 我能计算 RankIC 和分组收益；
+6. 我能把分数转换为持仓权重；
+7. 我能计算换手率和成本后收益；
+8. 我能解释年化收益、Sharpe 和最大回撤；
+9. 我能识别前视偏差和幸存者偏差；
+10. 我能使用时间切分；
+11. 我能从零运行完整脚本；
+12. 我能客观解释策略为什么失败。
+
+第一阶段的核心成果不是证明某个因子一定有效，而是建立一条能够被检查、能够被重复、能够承认失败的研究流程。
+
+# References {.unnumbered}
+
+::: {#refs}
+:::
